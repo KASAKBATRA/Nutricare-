@@ -112,8 +112,28 @@ export const foodLogs = pgTable("food_logs", {
   protein: decimal("protein", { precision: 8, scale: 2 }),
   carbs: decimal("carbs", { precision: 8, scale: 2 }),
   fat: decimal("fat", { precision: 8, scale: 2 }),
+  cookingIntensity: varchar("cooking_intensity"),
+  oilType: varchar("oil_type"),
+  milkType: varchar("milk_type"),
+  sugarType: varchar("sugar_type"),
+  category: varchar("category"),
+  ingredients: jsonb("ingredients"),
+  spiceLevel: varchar("spice_level"),
+  utensilType: varchar("utensil_type"),
+  adjustedCalories: decimal("adjusted_calories", { precision: 10, scale: 2 }),
   loggedAt: timestamp("logged_at").defaultNow(),
   date: timestamp("date").notNull(),
+});
+
+// Per-user per-meal personalized baselines (auto-learned)
+export const userMealBaselines = pgTable("user_meal_baselines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  mealName: varchar("meal_name").notNull(),
+  baselineCalories: decimal("baseline_calories", { precision: 10, scale: 2 }).notNull(),
+  sampleCount: integer("sample_count").default(0),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Mood tracking logs (linked to meals)

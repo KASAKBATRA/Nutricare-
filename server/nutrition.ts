@@ -43,7 +43,8 @@ export const addMealSchema = z.object({
   mealName: z.string().min(1, "Meal name is required"),
   quantity: z.number().positive("Quantity must be positive"),
   unit: z.enum(["grams", "ml", "cups", "pieces", "oz", "tbsp", "tsp"]),
-  mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional().default("snack"),
+  mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
+  cookingIntensity: z.enum(["Less Oil", "Normal", "More Oil", "Extra Ghee"]).optional().default("Normal"),
 });
 
 export type AddMealData = z.infer<typeof addMealSchema>;

@@ -89,8 +89,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
         res.json({ message: `Test email sent to ${email}` });
       } catch (err: any) {
-        console.error('Debug test email failed:', err?.message || err, err);
-        res.status(500).json({ message: 'Failed to send test email', error: err?.message || String(err) });
+  console.error('Debug test email failed:', String(err), err);
+  res.status(500).json({ message: 'Failed to send test email', error: String(err) });
       }
     });
 
@@ -356,6 +356,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Correction endpoint - user feedback to adjust estimated calories
+  app.post('/api/food-logs/:id/correction', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      const logId = req.params.id;
+      const { percentChange } = req.body; // e.g., -10 or 20
+
+      if (typeof percentChange !== 'number') return res.status(400).json({ message: 'percentChange number required' });
+
+      const logs = await storage.getFoodLogs(userId);
+      const found = logs.find(l => l.id === logId);
+      if (!found) return res.status(404).json({ message: 'Food log not found' });
+
+      const currentAdjusted = parseFloat((found as any).adjustedCalories || found.calories || '0');
+      const corrected = Math.round(currentAdjusted * (1 + percentChange / 100));
+
+      // Update the food log adjustedCalories
+      await storage.updateFoodLog(logId, userId, { adjustedCalories: corrected.toString() });
+
+      // Recompute per-user baseline for this meal
+      const sameMealLogs = logs.filter(l => l.mealName && (l.mealName as string).toLowerCase() === (found.mealName || '').toLowerCase());
+      const numericAdjusted = sameMealLogs.map(l => parseFloat((l as any).adjustedCalories || l.calories || '0'));
+      const avg = Math.round((numericAdjusted.reduce((a,b)=>a+b,0) + corrected) / (numericAdjusted.length + 1));
+      await storage.upsertUserMealBaseline(userId, found.mealName, avg, (sameMealLogs.length + 1)).catch(() => null);
+
+      res.json({ message: 'Correction applied', corrected });
+    } catch (err: any) {
+      console.error('Correction error:', err);
+      res.status(500).json({ message: 'Failed to apply correction' });
+    }
+  });
+
   app.get('/api/food-items', requireAuth, async (req, res) => {
     try {
       const search = req.query.search as string;
@@ -368,53 +400,295 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // New meal logging endpoints with nutrition calculation
+  // Multipliers used across endpoints
+  const OIL_MULTIPLIERS: Record<string, number> = {
+    "No Oil": 1.0,
+    "Refined": 1.1,
+    "Mustard": 1.15,
+    "Olive": 1.05,
+    "Desi Ghee": 1.3,
+    "Butter": 1.25,
+  };
+
+  const INTENSITY_MULTIPLIERS: Record<string, number> = {
+    "Boiled/Steamed": 0.8,
+    "Lightly Fried": 0.95,
+    "Normal": 1.0,
+    "Deep Fried": 1.25,
+    "Extra Ghee": 1.3,
+  };
+
+  const MILK_MULTIPLIERS: Record<string, number> = {
+    "None": 1.0,
+    "Cow Milk": 1.1,
+    "Buffalo Milk": 1.25,
+    "Skimmed Milk": 0.9,
+    "Plant Milk": 0.8,
+  };
+
+  // Simple keyword-based food category mapping (can be extended)
+  const FOOD_CATEGORY_MAP: Record<string, string> = {
+    milk: 'dairy',
+    tea: 'beverage',
+    coffee: 'beverage',
+    paneer: 'protein',
+    rice: 'grain',
+    chicken: 'protein',
+    poha: 'cooked',
+    roti: 'cooked',
+    curd: 'dairy',
+    fruit: 'raw',
+    dal: 'cooked',
+    sabzi: 'cooked',
+    egg: 'protein',
+  };
+
+  // Ingredient suggestions per keyword. Keys are keywords to match in food name.
+  const FOOD_INGREDIENTS_MAP: Record<string, string[]> = {
+    poha: ['Onion', 'Green Chili', 'Peanuts', 'Mustard Seeds', 'Coriander'],
+    sabzi: ['Onion', 'Garlic', 'Tomato', 'Green Chili', 'Ginger'],
+    dal: ['Onion', 'Garlic', 'Ghee', 'Tomato', 'Cumin'],
+    'chicken': ['Onion', 'Garlic', 'Ginger', 'Tomato', 'Green Chili'],
+    roti: ['Atta (Chakki Fresh)', 'Atta (Maida Mix)', 'Multi-grain'],
+    tea: ['Sugar', 'Milk'],
+    coffee: ['Sugar', 'Milk'],
+    milk: ['Full Cream', 'Toned', 'Skimmed'],
+    paneer: ['Paneer Cubes', 'Oil/Ghee', 'Spices'],
+    salad: ['Lettuce', 'Tomato', 'Onion', 'Olive Oil'],
+  };
+
+  function detectCategoryFromName(name: string) {
+    if (!name) return 'unknown';
+    const lower = name.toLowerCase();
+    for (const key of Object.keys(FOOD_CATEGORY_MAP)) {
+      if (lower.includes(key)) return FOOD_CATEGORY_MAP[key];
+    }
+    // heuristics: if contains words like curry, fry -> cooked
+    if (/(curry|fry|stew|sabzi|bhaji)/.test(lower)) return 'cooked';
+    if (/(juice|shake|smoothie)/.test(lower)) return 'beverage';
+    return 'raw';
+  }
+
+  // API endpoint to detect category and return which fields should be visible
+  app.post('/api/detect-category', requireAuth, async (req: any, res) => {
+    try {
+      const { name } = req.body || {};
+      if (!name) return res.status(400).json({ message: 'name is required' });
+      const category = detectCategoryFromName(String(name));
+
+      // Decide visible fields based on category
+      const visible: Record<string, boolean> = {
+        dairyBase: false,
+        milkType: false,
+        oilType: false,
+        cookingIntensity: false,
+        spiceLevel: false,
+        utensil: false,
+        sugarType: false,
+      };
+
+      // compute ingredient suggestions
+      const ingredientSuggestions: string[] = [];
+      const lower = String(name || '').toLowerCase();
+      for (const key of Object.keys(FOOD_INGREDIENTS_MAP)) {
+        if (lower.includes(key)) {
+          ingredientSuggestions.push(...FOOD_INGREDIENTS_MAP[key]);
+        }
+      }
+      // dedupe
+      const uniqueIngredients = Array.from(new Set(ingredientSuggestions));
+
+      if (category === 'dairy') {
+        visible.dairyBase = true;
+        visible.milkType = true;
+      } else if (category === 'beverage') {
+        visible.milkType = true;
+        visible.sugarType = true;
+      } else if (category === 'cooked') {
+        visible.oilType = true;
+        visible.cookingIntensity = true;
+        visible.spiceLevel = true;
+        visible.utensil = true;
+      } else if (category === 'protein') {
+        visible.oilType = true;
+        visible.cookingIntensity = true;
+      } else if (category === 'raw' || category === 'grain') {
+        // hide cooking options
+      }
+
+  res.json({ category, visible, ingredients: uniqueIngredients });
+    } catch (err: any) {
+      console.error('Detect category error:', err);
+      res.status(500).json({ message: 'Failed to detect category' });
+    }
+  });
+
   app.post('/api/add-meal', requireAuth, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       const mealData = addMealSchema.parse(req.body);
-      
-      // Get nutrition data from Nutritionix API
-      const nutrition = await nutritionService.getNutrition(
-        mealData.mealName,
-        mealData.quantity,
-        mealData.unit
-      );
+  // Check if user has a personalized baseline for this meal
+      let baseCalories: number;
+      const baseline = await storage.getUserMealBaseline(userId, mealData.mealName).catch(() => undefined);
+
+      if (baseline && baseline.sampleCount >= 5) {
+        // Use personalized baseline when enough samples are present
+        baseCalories = parseFloat(baseline.baselineCalories || 0);
+      } else {
+        // Fetch from Nutritionix
+        const nutrition = await nutritionService.getNutrition(
+          mealData.mealName,
+          mealData.quantity,
+          mealData.unit
+        );
+        baseCalories = nutrition.calories;
+      }
+
+  // Determine multiplier using oil, intensity and milk
+  const oilKey = (mealData as any).oilType || 'No Oil';
+  const milkKey = (mealData as any).milkType || 'None';
+  const intensityKey = (mealData as any).cookingIntensity || 'Normal';
+
+  const oilMul = OIL_MULTIPLIERS[oilKey] || 1.0;
+  const milkMul = MILK_MULTIPLIERS[milkKey] || 1.0;
+  const intensityMul = INTENSITY_MULTIPLIERS[intensityKey] || 1.0;
+
+  const finalMultiplier = oilMul * milkMul * intensityMul;
+
+  const adjustedCalories = Math.round(baseCalories * finalMultiplier);
+
+      // Try to fetch nutrition info (macros) for storing food item when baseline not used
+      let nutritionForItem: any = { calories: baseCalories, protein: 0, carbs: 0, fat: 0 };
+      try {
+        const n = await nutritionService.getNutrition(mealData.mealName, mealData.quantity, mealData.unit);
+        nutritionForItem = n;
+      } catch (err) {
+        // If Nutritionix fails, continue with calorie-only baseline
+      }
 
       // Create or get food item in database
       const foodItem = await storage.createOrGetFoodItem(mealData.mealName, {
-        calories: nutrition.calories,
-        protein: nutrition.protein,
-        carbs: nutrition.carbs,
-        fats: nutrition.fat,
-        fiber: nutrition.fiber,
-        sugar: nutrition.sugar,
-        sodium: nutrition.sodium,
+        calories: nutritionForItem.calories,
+        protein: nutritionForItem.protein,
+        carbs: nutritionForItem.carbs,
+        fats: nutritionForItem.fat,
+        fiber: nutritionForItem.fiber || 0,
+        sugar: nutritionForItem.sugar || 0,
+        sodium: nutritionForItem.sodium || 0,
       });
 
-      // Create food log entry
-      const foodLog = await storage.createFoodLog({
-        userId,
-        foodItemId: foodItem.id,
-        mealName: mealData.mealName,
-        mealType: mealData.mealType,
-        quantity: mealData.quantity.toString(),
-        unit: mealData.unit,
-        calories: nutrition.calories.toString(),
-        protein: nutrition.protein.toString(),
-        carbs: nutrition.carbs.toString(),
-        fat: nutrition.fat.toString(),
-        date: new Date(),
-      });
+      // Convert utensil-based quantity to grams if user selected a utensil (apply calibration)
+      // If the mealData unit is not gram-based and a utensilType was provided, attempt conversion
+      let usedUtensilConversion = false;
+      try {
+        const utensilType = (mealData as any).utensilType;
+        if (utensilType) {
+          // Try to find user calibration or fallbacks
+          const calibration = await storage.getUtensilCalibration(userId).catch(() => []);
+          let gramsPerUnit: number | undefined;
+          if (calibration && calibration.length > 0) {
+            const found = calibration.find(c => c.utensilType === utensilType);
+            if (found) gramsPerUnit = parseFloat(found.gramsPerUnit || '0');
+          }
+
+          // default fallbacks
+          const defaults: Record<string, number> = {
+            'Small Bowl (~100ml)': 100,
+            'Medium Bowl (~150ml)': 150,
+            'Large Bowl (~250ml)': 250,
+            'Plate (~300ml)': 300,
+            'Glass (~200ml)': 200,
+          };
+
+          if (!gramsPerUnit) gramsPerUnit = defaults[utensilType as string];
+          // If we found a grams per unit and the unit provided is a utensil-like unit, convert
+          if (gramsPerUnit && mealData.unit && ['pieces'].includes(mealData.unit) || mealData.unit === 'grams' || mealData.unit === 'ml') {
+            // If unit is 'pieces' interpret as count of utensilType
+            if (mealData.unit === 'pieces') {
+              // convert count * gramsPerUnit
+              const grams = Number(mealData.quantity) * gramsPerUnit;
+              // Replace baseCalories by refetching nutrition per grams
+              try {
+                const n = await nutritionService.getNutrition(mealData.mealName, grams, 'grams');
+                baseCalories = n.calories;
+              } catch (err) {
+                // ignore, keep existing baseCalories
+              }
+              usedUtensilConversion = true;
+            }
+          }
+        }
+      } catch (err) {
+        // ignore utensil conversion failures
+      }
+
+      // Create food log entry (store base calories and adjusted)
+      let foodLog: any;
+      try {
+        foodLog = await storage.createFoodLog({
+          userId,
+          foodItemId: foodItem.id,
+          mealName: mealData.mealName,
+          mealType: mealData.mealType,
+          quantity: mealData.quantity.toString(),
+          unit: mealData.unit,
+          calories: baseCalories.toString(),
+          protein: (nutritionForItem.protein || 0).toString(),
+          carbs: (nutritionForItem.carbs || 0).toString(),
+          fat: (nutritionForItem.fat || 0).toString(),
+          cookingIntensity: mealData.cookingIntensity || 'Normal',
+          oilType: (mealData as any).oilType || null,
+          milkType: (mealData as any).milkType || null,
+          sugarType: (mealData as any).sugarType || null,
+          ingredients: (mealData as any).ingredients ? JSON.stringify(mealData.ingredients) : null,
+          spiceLevel: (mealData as any).spiceLevel || null,
+          utensilType: (mealData as any).utensilType || null,
+          category: (mealData as any).category || null,
+          adjustedCalories: adjustedCalories.toString(),
+          date: new Date(),
+        });
+      } catch (err: any) {
+        // Fallback for databases that don't have the new columns yet (e.g., oil_type)
+        const errStr = String(err || '');
+        if (errStr.includes('does not exist') || err.code === '42703') {
+          console.warn('Database missing cooking detail columns, retrying insert without advanced fields');
+          // Retry without advanced fields so meal can still be logged
+          foodLog = await storage.createFoodLog({
+            userId,
+            foodItemId: foodItem.id,
+            mealName: mealData.mealName,
+            mealType: mealData.mealType,
+            quantity: mealData.quantity.toString(),
+            unit: mealData.unit,
+            calories: baseCalories.toString(),
+            protein: (nutritionForItem.protein || 0).toString(),
+            carbs: (nutritionForItem.carbs || 0).toString(),
+            fat: (nutritionForItem.fat || 0).toString(),
+            cookingIntensity: mealData.cookingIntensity || 'Normal',
+            // Advanced fields omitted in fallback insert to support older DBs
+            adjustedCalories: adjustedCalories.toString(),
+            date: new Date(),
+          });
+        } else {
+          throw err;
+        }
+      }
+
+      // Auto-learn: compute average adjusted calories for same meal for this user
+      const logs = await storage.getFoodLogs(userId);
+      const sameMealLogs = logs.filter(l => l.mealName && (l.mealName as string).toLowerCase() === mealData.mealName.toLowerCase());
+      if (sameMealLogs.length >= 5) {
+        const numericAdjusted = sameMealLogs.map(l => parseFloat((l as any).adjustedCalories || l.calories || 0));
+        const avg = Math.round(numericAdjusted.reduce((a,b)=>a+b,0) / numericAdjusted.length);
+        await storage.upsertUserMealBaseline(userId, mealData.mealName, avg, sameMealLogs.length).catch(() => null);
+      }
 
       res.json({
         message: "Meal logged successfully",
         meal: foodLog,
-        nutrition: {
-          calories: nutrition.calories,
-          protein: nutrition.protein,
-          carbs: nutrition.carbs,
-          fat: nutrition.fat,
-        },
+        base_calories: baseCalories,
+        adjusted_calories: adjustedCalories,
+        used_utensil_conversion: usedUtensilConversion || false,
       });
     } catch (error: any) {
       console.error("Error adding meal:", error);
@@ -422,6 +696,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: error.message || "Failed to add meal",
         errors: error.errors || []
       });
+    }
+  });
+
+  // Estimate calories endpoint (for frontend dynamic estimate)
+  app.get('/api/estimate-calories', requireAuth, async (req, res) => {
+    try {
+      const { q, quantity, unit, intensity, oil_type, milk_type, spice_level, utensil_type } = req.query as any;
+      if (!q || !quantity || !unit) return res.status(400).json({ message: 'q, quantity and unit are required' });
+
+      // If utensil_type is provided and unit is 'pieces', attempt to convert quantity to grams using user calibration if available
+      let usedBaseline = false;
+      let nutr: any;
+      try {
+        let qty = parseFloat(quantity);
+        let useUnit = unit;
+        if (utensil_type && unit === 'pieces') {
+          // try to get user calibration (we don't have userId here? we do via session)
+          const userId = getUserId(req);
+          let gramsPerUnit: number | undefined;
+          try {
+            const calibration = await storage.getUtensilCalibration(userId).catch(() => []);
+            const found = calibration.find((c: any) => c.utensilType === utensil_type);
+            if (found) gramsPerUnit = parseFloat(found.gramsPerUnit || '0');
+          } catch (err) {
+            // ignore
+          }
+          const defaults: Record<string, number> = {
+            'Small Bowl (~100ml)': 100,
+            'Medium Bowl (~150ml)': 150,
+            'Large Bowl (~250ml)': 250,
+            'Plate (~300ml)': 300,
+            'Glass (~200ml)': 200,
+          };
+          if (!gramsPerUnit) gramsPerUnit = defaults[utensil_type as string];
+          if (gramsPerUnit) {
+            qty = qty * gramsPerUnit;
+            useUnit = 'grams';
+          }
+        }
+
+        nutr = await nutritionService.getNutrition(q, qty, useUnit);
+      } catch (err) {
+        // If Nutritionix fails, try to use baseline
+        const baseline = await storage.getUserMealBaseline(getUserId(req), (q || '').toString()).catch(() => undefined);
+        if (baseline && baseline.baselineCalories) {
+          usedBaseline = true;
+          const baseCalories = parseFloat(baseline.baselineCalories || '0');
+          nutr = { calories: baseCalories, protein: 0, carbs: 0, fat: 0 };
+        } else {
+          throw err;
+        }
+      }
+
+      // Apply multipliers
+      const oilMul = (oil_type && OIL_MULTIPLIERS && (OIL_MULTIPLIERS as any)[oil_type]) || 1.0;
+      const milkMul = (milk_type && MILK_MULTIPLIERS && (MILK_MULTIPLIERS as any)[milk_type]) || 1.0;
+      const intensityMul = (intensity && INTENSITY_MULTIPLIERS && (INTENSITY_MULTIPLIERS as any)[intensity]) || 1.0;
+      const adjusted = Math.round(nutr.calories * oilMul * milkMul * intensityMul);
+      res.json({ base_calories: nutr.calories, adjusted_calories: adjusted, used_baseline: usedBaseline });
+    } catch (err: any) {
+      console.error('Estimate calories error:', err);
+      res.status(500).json({ message: 'Failed to estimate calories' });
     }
   });
 
@@ -770,13 +1106,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }));
 
       // Generate AI response
-      const aiResponse = await generateChatResponse(chatHistory, language);
-      
+      let assistantContent = '';
+
+      // Prefer Python NLP chatbot service if available (no OpenAI required)
+      const pythonChatUrl = process.env.PYTHON_CHATBOT_URL || 'http://localhost:9000';
+      try {
+        const resp = await fetch(`${pythonChatUrl}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: req.session?.userId || null, message: content, lang: language }),
+        });
+        if (resp.ok) {
+          const json = await resp.json();
+          assistantContent = json.reply || json.message || '';
+        } else {
+          console.warn('Python chatbot returned non-OK:', resp.status);
+        }
+      } catch (err) {
+  console.warn('Python chatbot not reachable, falling back to OpenAI backend:', String(err));
+      }
+
+      // Fallback to OpenAI-based generator if python service didn't provide an answer
+      if (!assistantContent) {
+        const aiResponse = await generateChatResponse(chatHistory, language);
+        assistantContent = aiResponse.message;
+      }
+
       // Save AI response
       const assistantMessage = await storage.createChatMessage({
         conversationId,
         role: "assistant",
-        content: aiResponse.message,
+        content: assistantContent,
       });
 
       res.json({

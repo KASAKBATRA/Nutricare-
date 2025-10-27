@@ -17,6 +17,7 @@ import {
   chatConversations,
   chatMessages,
   foodItems,
+  userMealBaselines,
   userUtensilMapping,
   type User,
   type UpsertUser,
@@ -147,6 +148,9 @@ export interface IStorage {
   // Utensil calibration
   saveUtensilCalibration(userId: string, utensilType: string, gramsPerUnit: number): Promise<UserUtensilMapping>;
   getUtensilCalibration(userId: string): Promise<UserUtensilMapping[]>;
+  // Personal baselines
+  getUserMealBaseline(userId: string, mealName: string): Promise<any | undefined>;
+  upsertUserMealBaseline(userId: string, mealName: string, baselineCalories: number, sampleCount?: number): Promise<any>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -334,6 +338,51 @@ export class DatabaseStorage implements IStorage {
     }
     
     return await db.select().from(foodItems).limit(50);
+  }
+
+  // Personal baselines
+  async getUserMealBaseline(userId: string, mealName: string): Promise<any | undefined> {
+    try {
+      const [row] = await db.select().from(userMealBaselines).where(
+        and(
+          eq(userMealBaselines.userId, userId),
+          sql`${userMealBaselines.mealName} ILIKE ${mealName}`
+        )
+      ).limit(1);
+      return row;
+    } catch (error: any) {
+      if (error.code === '42P01') {
+        // table doesn't exist yet
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
+  async upsertUserMealBaseline(userId: string, mealName: string, baselineCalories: number, sampleCount = 0): Promise<any> {
+    // Try to find existing
+    const [existing] = await db.select().from(userMealBaselines).where(
+      and(
+        eq(userMealBaselines.userId, userId),
+        sql`${userMealBaselines.mealName} ILIKE ${mealName}`
+      )
+    ).limit(1);
+
+    if (existing) {
+      const [updated] = await db.update(userMealBaselines)
+        .set({ baselineCalories: baselineCalories.toString(), sampleCount, updatedAt: new Date() })
+        .where(eq(userMealBaselines.id, existing.id))
+        .returning();
+      return updated;
+    } else {
+      const [inserted] = await db.insert(userMealBaselines).values({
+        userId,
+        mealName: mealName.toLowerCase(),
+        baselineCalories: baselineCalories.toString(),
+        sampleCount,
+      }).returning();
+      return inserted;
+    }
   }
 
   async createOrGetFoodItem(name: string, nutritionPer100g: {
