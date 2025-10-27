@@ -97,6 +97,7 @@ import { isUnauthorizedError } from '@/lib/authUtils';
 import { apiRequest } from '@/lib/queryClient';
 import { calculateNutritionRequirements, getGenderSpecificTips, getGenderSpecificFoods } from '@/lib/nutritionCalculator';
 import { GenderSpecificMicronutrients } from '@/components/GenderSpecificMicronutrients';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 
 export default function Dashboard() {
   // OCR and Health Classification State (must be inside component)
@@ -402,6 +403,18 @@ export default function Dashboard() {
 
   const currentMicronutrients = calculateMicronutrients();
 
+  // Simple food hints for macros to show actionable foods to increase a given macro
+  const genderForFoods = (user as any)?.gender || (userProfile as any)?.gender || 'female';
+  const macroFoodHints: Record<string, string[]> = {
+    calories: genderForFoods === 'female'
+      ? ['Nuts & nut butter', 'Full-fat dairy', 'Avocado']
+      : ['Nuts & nut butter', 'Granola', 'Olive oil'],
+    protein: ['Eggs', 'Chicken / Fish', 'Greek yogurt', 'Tofu', 'Lentils'],
+    carbs: ['Oats', 'Brown rice', 'Sweet potato', 'Bananas', 'Whole grain bread'],
+    fat: ['Avocado', 'Olive oil', 'Walnuts', 'Chia seeds', 'Fatty fish'],
+    water: ['Plain water', 'Coconut water', 'Soups', 'Watermelon', 'Herbal tea']
+  };
+
   const getBMIStatus = (bmi: number) => {
     if (bmi < 18.5) return { status: 'Underweight', color: 'text-blue-500' };
     if (bmi < 25) return { status: t('dashboard.normal'), color: 'text-green-500' };
@@ -421,20 +434,9 @@ export default function Dashboard() {
         {/* Food Label Upload & OCR */}
 
         {/* Food Label OCR & Health Classification Modal (Glassmorphism) */}
-        <input
-          type="file"
-          accept="image/*"
-          ref={fileInputRef}
-          style={{ display: 'none' }}
-          onChange={handleLabelImageChange}
-        />
         {labelImage && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
-            style={{ animation: 'fadeIn 0.2s' }}
-          >
-            <div
-              className="relative w-full max-w-md mx-auto p-6 rounded-2xl shadow-2xl"
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" style={{ animation: 'fadeIn 0.2s' }}>
+            <div className="relative w-full max-w-md mx-auto p-6 rounded-2xl shadow-2xl"
               style={{
                 background: 'rgba(255,255,255,0.25)',
                 boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.37)',
@@ -508,228 +510,256 @@ export default function Dashboard() {
         {/* Dashboard Cards - All 5 in one row */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
           {/* Calorie Intake Card */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700 hover:shadow-xl transition-all duration-200">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 bg-red-100 dark:bg-red-900/20 rounded-full">
-                <i className="fas fa-fire text-red-500 text-xl"></i>
+          <Popover>
+            <PopoverTrigger asChild>
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700 hover:shadow-xl transition-all duration-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-red-100 dark:bg-red-900/20 rounded-full">
+                    <i className="fas fa-fire text-red-500 text-xl"></i>
+                  </div>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.today')}</span>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{t('dashboard.calories')}</h3>
+                <div className="flex items-end space-x-2">
+                  <span className="text-2xl font-bold text-gray-900 dark:text-white">{Math.round(totalCalories)}</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">/ {calorieGoal}</span>
+                </div>
+                <div className="mt-3 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                  <div className="bg-red-500 h-2 rounded-full" style={{ width: `${calorieProgress}%` }}></div>
+                </div>
               </div>
-              <span className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.today')}</span>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{t('dashboard.calories')}</h3>
-            <div className="flex items-end space-x-2">
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">{Math.round(totalCalories)}</span>
-              <span className="text-sm text-gray-500 dark:text-gray-400">/ {calorieGoal}</span>
-            </div>
-            <div className="mt-3 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-              <div className="bg-red-500 h-2 rounded-full" style={{ width: `${calorieProgress}%` }}></div>
-            </div>
-          </div>
+            </PopoverTrigger>
+            <PopoverContent side="top" sideOffset={8}>
+              <div className="text-sm text-gray-700 dark:text-gray-200">
+                <div className="font-semibold mb-2">Increase calories</div>
+                <ul className="list-disc ml-5 space-y-1">
+                  {macroFoodHints.calories.map((f, i) => (
+                    <li key={i}>{f}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 bg-popover border border-gray-200 dark:border-gray-700"></div>
+            </PopoverContent>
+          </Popover>
 
           {/* Hydration Card */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700 hover:shadow-xl transition-all duration-200">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 bg-blue-100 dark:bg-blue-900/20 rounded-full">
-                <i className="fas fa-tint text-blue-500 text-xl"></i>
+          <Popover>
+            <PopoverTrigger asChild>
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700 hover:shadow-xl transition-all duration-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-blue-100 dark:bg-blue-900/20 rounded-full">
+                    <i className="fas fa-tint text-blue-500 text-xl"></i>
+                  </div>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.today')}</span>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{t('dashboard.water')}</h3>
+                <div className="flex items-end space-x-2">
+                  <span className="text-2xl font-bold text-gray-900 dark:text-white">{totalWater}</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">/ {waterGoal} {t('dashboard.glasses')}</span>
+                </div>
+                <div className="mt-3 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                  <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${waterProgress}%` }}></div>
+                </div>
+                <button 
+                  onClick={() => setIsWaterModalOpen(true)}
+                  className="mt-4 w-full bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg transition-colors duration-200 text-sm font-medium"
+                >
+                  <i className="fas fa-plus mr-2"></i>
+                  Add Water
+                </button>
               </div>
-              <span className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.today')}</span>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{t('dashboard.water')}</h3>
-            <div className="flex items-end space-x-2">
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">{totalWater}</span>
-              <span className="text-sm text-gray-500 dark:text-gray-400">/ {waterGoal} {t('dashboard.glasses')}</span>
-            </div>
-            <div className="mt-3 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-              <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${waterProgress}%` }}></div>
-            </div>
-            <button 
-              onClick={() => setIsWaterModalOpen(true)}
-              className="mt-4 w-full bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg transition-colors duration-200 text-sm font-medium"
-            >
-              <i className="fas fa-plus mr-2"></i>
-              Add Water
-            </button>
-          </div>
+            </PopoverTrigger>
+            <PopoverContent side="top" sideOffset={8}>
+              <div className="text-sm text-gray-700 dark:text-gray-200">
+                <div className="font-semibold mb-2">Increase hydration</div>
+                <ul className="list-disc ml-5 space-y-1">
+                  {macroFoodHints.water.map((f, i) => (
+                    <li key={i}>{f}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 bg-popover border border-gray-200 dark:border-gray-700"></div>
+            </PopoverContent>
+          </Popover>
 
           {/* Protein Card */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700 hover:shadow-xl transition-all duration-200">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 bg-blue-100 dark:bg-blue-900/20 rounded-full">
-                <i className="fas fa-dumbbell text-blue-500 text-xl"></i>
+          <Popover>
+            <PopoverTrigger asChild>
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700 hover:shadow-xl transition-all duration-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-blue-100 dark:bg-blue-900/20 rounded-full">
+                    <i className="fas fa-dumbbell text-blue-500 text-xl"></i>
+                  </div>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.today')}</span>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{t('dashboard.protein')}</h3>
+                <div className="flex items-end space-x-2">
+                  <span className="text-2xl font-bold text-gray-900 dark:text-white">{Math.round(totalProtein)}</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">/ {proteinGoal}{t('units.g')}</span>
+                </div>
+                <div className="mt-3 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                  <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${proteinProgress}%` }}></div>
+                </div>
               </div>
-              <span className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.today')}</span>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{t('dashboard.protein')}</h3>
-            <div className="flex items-end space-x-2">
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">{Math.round(totalProtein)}</span>
-              <span className="text-sm text-gray-500 dark:text-gray-400">/ {proteinGoal}{t('units.g')}</span>
-            </div>
-            <div className="mt-3 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-              <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${proteinProgress}%` }}></div>
-            </div>
-          </div>
+            </PopoverTrigger>
+            <PopoverContent side="top" sideOffset={8}>
+              <div className="text-sm text-gray-700 dark:text-gray-200">
+                <div className="font-semibold mb-2">Increase protein</div>
+                <ul className="list-disc ml-5 space-y-1">
+                  {macroFoodHints.protein.map((f, i) => (
+                    <li key={i}>{f}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 bg-popover border border-gray-200 dark:border-gray-700"></div>
+            </PopoverContent>
+          </Popover>
 
           {/* Carbs Card */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700 hover:shadow-xl transition-all duration-200">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 bg-orange-100 dark:bg-orange-900/20 rounded-full">
-                <i className="fas fa-seedling text-orange-500 text-xl"></i>
+          <Popover>
+            <PopoverTrigger asChild>
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700 hover:shadow-xl transition-all duration-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-orange-100 dark:bg-orange-900/20 rounded-full">
+                    <i className="fas fa-seedling text-orange-500 text-xl"></i>
+                  </div>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.today')}</span>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{t('dashboard.carbs')}</h3>
+                <div className="flex items-end space-x-2">
+                  <span className="text-2xl font-bold text-gray-900 dark:text-white">{Math.round(totalCarbs)}</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">/ {carbsGoal}{t('units.g')}</span>
+                </div>
+                <div className="mt-3 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                  <div className="bg-orange-500 h-2 rounded-full" style={{ width: `${carbsProgress}%` }}></div>
+                </div>
               </div>
-              <span className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.today')}</span>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{t('dashboard.carbs')}</h3>
-            <div className="flex items-end space-x-2">
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">{Math.round(totalCarbs)}</span>
-              <span className="text-sm text-gray-500 dark:text-gray-400">/ {carbsGoal}{t('units.g')}</span>
-            </div>
-            <div className="mt-3 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-              <div className="bg-orange-500 h-2 rounded-full" style={{ width: `${carbsProgress}%` }}></div>
-            </div>
-          </div>
+            </PopoverTrigger>
+            <PopoverContent side="top" sideOffset={8}>
+              <div className="text-sm text-gray-700 dark:text-gray-200">
+                <div className="font-semibold mb-2">Increase carbs</div>
+                <ul className="list-disc ml-5 space-y-1">
+                  {macroFoodHints.carbs.map((f, i) => (
+                    <li key={i}>{f}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 bg-popover border border-gray-200 dark:border-gray-700"></div>
+            </PopoverContent>
+          </Popover>
 
           {/* Fat Card */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700 hover:shadow-xl transition-all duration-200">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 bg-purple-100 dark:bg-purple-900/20 rounded-full">
-                <i className="fas fa-tint text-purple-500 text-xl"></i>
-              </div>
-              <span className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.today')}</span>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{t('dashboard.fat')}</h3>
-            <div className="flex items-end space-x-2">
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">{Math.round(totalFat)}</span>
-              <span className="text-sm text-gray-500 dark:text-gray-400">/ {fatGoal}{t('units.g')}</span>
-            </div>
-            <div className="mt-3 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-              <div className="bg-purple-500 h-2 rounded-full" style={{ width: `${fatProgress}%` }}></div>
-            </div>
-          </div>
-        </div>
-
-        {/* Gender-Specific Micronutrients - Smaller Cards */}
-        <div className="mb-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-            <span className="mr-2">{(user as any)?.gender === 'male' ? '♂️' : '♀️'}</span>
-            {(user as any)?.gender === 'male' ? 'Male Key Nutrients' : 'Female Key Nutrients'}
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {/* Dynamic micronutrient cards based on gender */}
-            {(() => {
-              const gender = (user as any)?.gender || (userProfile as any)?.gender || 'female';
-              const micronutrientRequirements = nutritionRequirements.micronutrients;
-              
-              if (gender === 'male') {
-                return [
-                  {
-                    name: 'Zinc',
-                    current: currentMicronutrients.zinc,
-                    target: micronutrientRequirements.zinc,
-                    unit: 'mg',
-                    icon: '🔵',
-                    color: 'blue',
-                    description: 'Supports testosterone and immune function'
-                  },
-                  {
-                    name: 'Magnesium', 
-                    current: currentMicronutrients.magnesium,
-                    target: micronutrientRequirements.magnesium,
-                    unit: 'mg',
-                    icon: '💜',
-                    color: 'purple',
-                    description: 'Essential for muscle and heart health'
-                  },
-                  {
-                    name: 'Potassium',
-                    current: currentMicronutrients.potassium,
-                    target: micronutrientRequirements.potassium,
-                    unit: 'mg',
-                    icon: '⚡',
-                    color: 'orange',
-                    description: 'Supports muscle function and blood pressure'
-                  },
-                  {
-                    name: 'Vitamin B12',
-                    current: currentMicronutrients.vitaminB12,
-                    target: micronutrientRequirements.vitaminB12,
-                    unit: 'mcg',
-                    icon: '💙',
-                    color: 'indigo',
-                    description: 'Boosts energy and metabolism'
-                  }
-                ];
-              } else {
-                return [
-                  {
-                    name: 'Iron',
-                    current: currentMicronutrients.iron,
-                    target: micronutrientRequirements.iron,
-                    unit: 'mg',
-                    icon: '🔴',
-                    color: 'red',
-                    description: 'Essential for oxygen transport'
-                  },
-                  {
-                    name: 'Calcium',
-                    current: currentMicronutrients.calcium,
-                    target: micronutrientRequirements.calcium,
-                    unit: 'mg',
-                    icon: '🤍',
-                    color: 'gray',
-                    description: 'Builds strong bones and teeth'
-                  },
-                  {
-                    name: 'Vitamin D',
-                    current: currentMicronutrients.vitaminD,
-                    target: micronutrientRequirements.vitaminD,
-                    unit: 'IU',
-                    icon: '☀️',
-                    color: 'yellow',
-                    description: 'Supports bone health and immunity'
-                  },
-                  {
-                    name: 'Folate',
-                    current: currentMicronutrients.folate,
-                    target: micronutrientRequirements.folate,
-                    unit: 'mcg',
-                    icon: '💚',
-                    color: 'green',
-                    description: 'Important for cell division'
-                  }
-                ];
-              }
-            })().map((nutrient, index) => {
-              const progress = Math.min((nutrient.current / nutrient.target) * 100, 100);
-              const isLow = progress < 30;
-              
-              return (
-                <div key={index} className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-all duration-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-lg">{nutrient.icon}</span>
-                    <span className={`text-xs px-2 py-1 rounded-full ${isLow ? 'bg-red-100 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'bg-green-100 text-green-600 dark:bg-green-900/20 dark:text-green-400'}`}>
-                      {isLow ? 'Low' : 'Good'}
-                    </span>
+          <Popover>
+            <PopoverTrigger asChild>
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700 hover:shadow-xl transition-all duration-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-purple-100 dark:bg-purple-900/20 rounded-full">
+                    <i className="fas fa-tint text-purple-500 text-xl"></i>
                   </div>
-                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">{nutrient.name}</h4>
-                  <div className="flex items-end space-x-1 mb-2">
-                    <span className="text-lg font-bold text-gray-900 dark:text-white">{nutrient.current}</span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">/ {nutrient.target}{nutrient.unit}</span>
-                  </div>
-                  <div className="bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mb-2">
-                    <div 
-                      className={`bg-${nutrient.color}-500 h-1.5 rounded-full transition-all duration-300`}
-                      style={{ width: `${progress}%` }}
-                    ></div>
-                  </div>
-                  <p className="text-xs text-gray-600 dark:text-gray-400">{nutrient.description}</p>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.today')}</span>
                 </div>
-              );
-            })}
-          </div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{t('dashboard.fat')}</h3>
+                <div className="flex items-end space-x-2">
+                  <span className="text-2xl font-bold text-gray-900 dark:text-white">{Math.round(totalFat)}</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">/ {fatGoal}{t('units.g')}</span>
+                </div>
+                <div className="mt-3 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                  <div className="bg-purple-500 h-2 rounded-full" style={{ width: `${fatProgress}%` }}></div>
+                </div>
+              </div>
+            </PopoverTrigger>
+            <PopoverContent side="top" sideOffset={8}>
+              <div className="text-sm text-gray-700 dark:text-gray-200">
+                <div className="font-semibold mb-2">Increase healthy fats</div>
+                <ul className="list-disc ml-5 space-y-1">
+                  {macroFoodHints.fat.map((f, i) => (
+                    <li key={i}>{f}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 bg-popover border border-gray-200 dark:border-gray-700"></div>
+            </PopoverContent>
+          </Popover>
         </div>
 
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Daily Food Log */}
+        {/* Two-column layout: left = nutrients, right = meals + expanded tips */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-6">
+          {/* Left: Nutrient cards */}
           <div className="lg:col-span-2">
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                <span className="mr-2">{(user as any)?.gender === 'male' ? '♂️' : '♀️'}</span>
+                {(user as any)?.gender === 'male' ? 'Male Key Nutrients' : 'Female Key Nutrients'}
+              </h3>
+
+              <div className="grid grid-cols-2 gap-4 auto-rows-fr">
+                {(() => {
+                  const gender = (user as any)?.gender || (userProfile as any)?.gender || 'female';
+                  const micronutrientRequirements = nutritionRequirements.micronutrients;
+                  
+                  if (gender === 'male') {
+                    return [
+                      { name: 'Zinc', current: currentMicronutrients.zinc, target: micronutrientRequirements.zinc, unit: 'mg', icon: '🔵', color: 'blue', description: 'Supports testosterone and immune function' },
+                      { name: 'Magnesium', current: currentMicronutrients.magnesium, target: micronutrientRequirements.magnesium, unit: 'mg', icon: '💜', color: 'purple', description: 'Essential for muscle and heart health' },
+                      { name: 'Potassium', current: currentMicronutrients.potassium, target: micronutrientRequirements.potassium, unit: 'mg', icon: '⚡', color: 'orange', description: 'Supports muscle function and blood pressure' },
+                      { name: 'Vitamin B12', current: currentMicronutrients.vitaminB12, target: micronutrientRequirements.vitaminB12, unit: 'mcg', icon: '💙', color: 'indigo', description: 'Boosts energy and metabolism' }
+                    ];
+                  } else {
+                    return [
+                      { name: 'Iron', current: currentMicronutrients.iron, target: micronutrientRequirements.iron, unit: 'mg', icon: '🔴', color: 'red', description: 'Essential for oxygen transport' },
+                      { name: 'Calcium', current: currentMicronutrients.calcium, target: micronutrientRequirements.calcium, unit: 'mg', icon: '🤍', color: 'gray', description: 'Builds strong bones and teeth' },
+                      { name: 'Vitamin D', current: currentMicronutrients.vitaminD, target: micronutrientRequirements.vitaminD, unit: 'IU', icon: '☀️', color: 'yellow', description: 'Supports bone health and immunity' },
+                      { name: 'Folate', current: currentMicronutrients.folate, target: micronutrientRequirements.folate, unit: 'mcg', icon: '💚', color: 'green', description: 'Important for cell division' }
+                    ];
+                  }
+                })().map((nutrient, index) => {
+                  const progress = Math.min((nutrient.current / (nutrient.target || 1)) * 100, 100);
+                  const isLow = progress < 30;
+                  const gender = (user as any)?.gender || (userProfile as any)?.gender || 'female';
+                  const focusFoods = getGenderSpecificFoods(gender).focus || [];
+                  const matched = focusFoods.filter((f: string) => f.toLowerCase().includes(nutrient.name.toLowerCase()));
+                  const foodsToShow = matched.length > 0 ? matched : focusFoods.slice(0, 2);
+
+                  return (
+                    <div key={index} className="group relative bg-white dark:bg-gray-800 rounded-lg shadow-md p-3 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-all duration-200 h-28 flex flex-col justify-between">
+                      <div className="flex items-center justify-between">
+                        <span className="text-lg">{nutrient.icon}</span>
+                        <span className={`text-xs px-2 py-1 rounded-full ${isLow ? 'bg-red-100 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'bg-green-100 text-green-600 dark:bg-green-900/20 dark:text-green-400'}`}>
+                          {isLow ? 'Low' : 'Good'}
+                        </span>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">{nutrient.name}</h4>
+                        <div className="flex items-end space-x-1 mb-1">
+                          <span className="text-lg font-bold text-gray-900 dark:text-white">{nutrient.current}</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">/ {nutrient.target}{nutrient.unit}</span>
+                        </div>
+                        <div className="bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mb-1">
+                          <div className={`h-1.5 rounded-full transition-all duration-300 ${isLow ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${progress}%` }} />
+                        </div>
+                      </div>
+
+                      {/* Hover popover showing foods for this nutrient */}
+                      <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 w-44 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150">
+                        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow px-3 py-2 text-xs text-gray-700 dark:text-gray-300">
+                          <div className="font-medium mb-1">Foods high in {nutrient.name}</div>
+                          <ul className="list-disc list-inside">
+                            {foodsToShow.map((f: string, i: number) => (
+                              <li key={i}>{f}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Meals + Nutrition Tips (expanded) */}
+          <div className="lg:col-span-1 space-y-6">
+            {/* Today's Meals (moved to right column) */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
@@ -745,65 +775,42 @@ export default function Dashboard() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {/* Show recent meals or empty state */}
+              <div className="grid grid-cols-1 gap-4">
                 {todayFoodLogs.length > 0 ? (
-                  todayFoodLogs.slice(0, 8).map((meal: any, index: number) => {
-                    const mealTypeIcons = {
-                      breakfast: { icon: 'fa-sun', color: 'bg-orange-500' },
-                      lunch: { icon: 'fa-sun', color: 'bg-yellow-500' },
-                      dinner: { icon: 'fa-moon', color: 'bg-purple-500' },
-                      snack: { icon: 'fa-apple-alt', color: 'bg-green-500' },
-                    };
-                    const mealIcon = mealTypeIcons[meal.mealType as keyof typeof mealTypeIcons] || mealTypeIcons.snack;
-                    
-                    return (
-                      <div key={meal.id} className="aspect-square p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600 flex flex-col justify-between relative group">
-                        {/* Action Buttons */}
-                        <div className="absolute top-1 right-1 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                          <button
-                            onClick={() => handleEditMeal(meal)}
-                            className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center"
-                            disabled={deleteMealMutation.isPending}
-                          >
-                            <i className="fas fa-edit text-xs"></i>
-                          </button>
-                          <button
-                            onClick={() => handleDeleteMeal(meal.id, meal.mealName)}
-                            className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center"
-                            disabled={deleteMealMutation.isPending}
-                          >
-                            <i className="fas fa-trash text-xs"></i>
-                          </button>
-                        </div>
-                        
-                        <div className="flex items-center justify-between mb-2">
-                          <div className={`p-1.5 ${mealIcon.color} rounded-full`}>
-                            <i className={`fas ${mealIcon.icon} text-white text-xs`}></i>
+                  <div className="grid grid-cols-1 gap-4">
+                    {todayFoodLogs.slice(0, 8).map((meal: any) => {
+                      const mealTypeIcons = {
+                        breakfast: { icon: 'fa-sun', color: 'bg-orange-500' },
+                        lunch: { icon: 'fa-sun', color: 'bg-yellow-500' },
+                        dinner: { icon: 'fa-moon', color: 'bg-purple-500' },
+                        snack: { icon: 'fa-apple-alt', color: 'bg-green-500' },
+                      };
+                      const mealIcon = mealTypeIcons[meal.mealType as keyof typeof mealTypeIcons] || mealTypeIcons.snack;
+
+                      return (
+                        <div key={meal.id} className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600 flex flex-col relative">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className={`p-1.5 ${mealIcon.color} rounded-full`}>
+                              <i className={`fas ${mealIcon.icon} text-white text-xs`}></i>
+                            </div>
+                            <span className="text-sm font-bold text-gray-900 dark:text-white">{meal.calories} cal</span>
                           </div>
-                          <span className="text-xs font-bold text-gray-900 dark:text-white">{meal.calories} cal</span>
-                        </div>
-                        <div className="flex-1">
-                          <h4 className="font-medium text-sm text-gray-900 dark:text-white capitalize truncate">{meal.mealName}</h4>
-                          <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">
-                            {meal.quantity} {meal.unit}
-                          </p>
-                          <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-                            <span>P:{meal.protein}g</span>
-                            <span>C:{meal.carbs}g</span>
-                            <span>F:{meal.fat}g</span>
+                          <div>
+                            <h4 className="font-medium text-sm text-gray-900 dark:text-white capitalize truncate">{meal.mealName}</h4>
+                            <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">{meal.quantity} {meal.unit}</p>
+                            <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-2">
+                              <span>P:{meal.protein}g</span>
+                              <span>C:{meal.carbs}g</span>
+                              <span>F:{meal.fat}g</span>
+                            </div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{new Date(meal.loggedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                           </div>
                         </div>
-                        <div className="text-center">
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {new Date(meal.loggedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })
+                      );
+                    })}
+                  </div>
                 ) : (
-                  <div className="col-span-full text-center py-8">
+                  <div className="text-center py-8">
                     <div className="p-4 bg-gray-100 dark:bg-gray-700 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
                       <i className="fas fa-utensils text-gray-400 text-xl"></i>
                     </div>
@@ -819,202 +826,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Community Feed Preview */}
-            <div className="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  <i className="fab fa-instagram text-pink-500 mr-2"></i>
-                  {t('community.title')}
-                </h3>
-                <button className="text-nutricare-green hover:text-nutricare-dark transition-colors">
-                  {t('community.view_all')} <i className="fas fa-arrow-right ml-1"></i>
-                </button>
-              </div>
-
-              {communityPosts && communityPosts.length > 0 ? (
-                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                  <div className="flex items-center space-x-3 mb-3">
-                    <div className="w-10 h-10 bg-gradient-to-r from-pink-400 to-purple-400 rounded-full flex items-center justify-center text-white font-semibold">
-                      {communityPosts[0].user?.firstName?.[0] || 'U'}
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-gray-900 dark:text-white">
-                        {communityPosts[0].user?.firstName || 'User'} {communityPosts[0].user?.lastName || ''}
-                      </h4>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {new Date(communityPosts[0].createdAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-                  {communityPosts[0].imageUrl && (
-                    <img 
-                      src={communityPosts[0].imageUrl} 
-                      alt="Community post" 
-                      className="w-full h-48 object-cover rounded-lg mb-3"
-                    />
-                  )}
-                  <p className="text-gray-700 dark:text-gray-300 mb-3">{communityPosts[0].content}</p>
-                  <div className="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
-                    <button className="flex items-center space-x-1 hover:text-red-500 transition-colors">
-                      <i className="far fa-heart"></i>
-                      <span>{communityPosts[0].likesCount || 0}</span>
-                    </button>
-                    <button className="flex items-center space-x-1 hover:text-blue-500 transition-colors">
-                      <i className="far fa-comment"></i>
-                      <span>{communityPosts[0].commentsCount || 0}</span>
-                    </button>
-                    <button className="flex items-center space-x-1 hover:text-green-500 transition-colors">
-                      <i className="far fa-share"></i>
-                      <span>Share</span>
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <div className="p-4 bg-gray-100 dark:bg-gray-700 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                    <i className="fab fa-instagram text-gray-400 text-xl"></i>
-                  </div>
-                  <p className="text-gray-500 dark:text-gray-400">No community posts yet</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Right Sidebar */}
-          <div className="space-y-6">
-            {/* Quick Actions */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 border border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">{t('actions.title')}</h3>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  className="aspect-square flex flex-col items-center justify-center p-2 bg-nutricare-green/10 hover:bg-nutricare-green/20 rounded-lg transition-colors"
-                  onClick={handleScanFoodLabelClick}
-                >
-                  <i className="fas fa-camera-retro text-nutricare-green text-sm mb-1"></i>
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300 text-center leading-tight">Scan</span>
-                </button>
-                <button
-                  className="aspect-square flex flex-col items-center justify-center p-2 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
-                  onClick={() => setLocation('/appointments')}
-                >
-                  <i className="fas fa-calendar-plus text-blue-500 text-sm mb-1"></i>
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300 text-center leading-tight">Book</span>
-                </button>
-                <button
-                  className="aspect-square flex flex-col items-center justify-center p-2 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/30 rounded-lg transition-colors"
-                  onClick={() => setLocation('/reports')}
-                >
-                  <i className="fas fa-chart-bar text-purple-500 text-sm mb-1"></i>
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300 text-center leading-tight">Reports</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Upcoming Appointments */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">{t('appointments.title')}</h3>
-              {appointments && appointments.length > 0 ? (
-                <div className="space-y-3">
-                  {appointments.slice(0, 2).map((appointment: any) => (
-                    <div key={appointment.id} className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-gray-900 dark:text-white">Dr. Nutritionist</p>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">{t('appointments.consultation')}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium text-gray-900 dark:text-white">
-                            {new Date(appointment.scheduledAt).toLocaleDateString()}
-                          </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {new Date(appointment.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-4">
-                  <p className="text-gray-500 dark:text-gray-400">No upcoming appointments</p>
-                </div>
-              )}
-            </div>
-
-            {/* Gender-Specific Nutrition Tips */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                <i className={`fas ${(user as any)?.gender === 'male' || (userProfile as any)?.gender === 'male' ? 'fa-mars text-blue-500' : 'fa-venus text-pink-500'} mr-2`}></i>
-                {(user as any)?.gender === 'male' || (userProfile as any)?.gender === 'male' ? '🟢 Male Nutrition Tips' : '🟣 Female Nutrition Tips'}
-              </h3>
-              
-              {/* Daily Goals Summary */}
-              <div className="mb-4 p-3 bg-gradient-to-r from-nutricare-green/10 to-nutricare-light/10 rounded-lg">
-                <h4 className="font-medium text-gray-900 dark:text-white mb-2">Your Daily Goals</h4>
-                <div className="text-sm space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">Calories:</span>
-                    <span className="font-medium">{calorieGoal} kcal</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">Protein:</span>
-                    <span className="font-medium">{proteinGoal}g</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">Water:</span>
-                    <span className="font-medium">{waterGoal} glasses</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Gender-specific tips */}
-              <div className="space-y-2">
-                {getGenderSpecificTips((user as any)?.gender || (userProfile as any)?.gender || 'female').slice(0, 3).map((tip, index) => (
-                  <div key={index} className="text-sm text-gray-600 dark:text-gray-400 flex items-start">
-                    <span className="mr-2">{tip.split(' ')[0]}</span>
-                    <span>{tip.split(' ').slice(1).join(' ')}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Focus foods */}
-              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
-                <h4 className="font-medium text-gray-900 dark:text-white mb-2">Focus Foods</h4>
-                <div className="flex flex-wrap gap-1">
-                  {getGenderSpecificFoods((user as any)?.gender || (userProfile as any)?.gender || 'female').focus.slice(0, 2).map((food, index) => (
-                    <span key={index} className="text-xs px-2 py-1 bg-nutricare-green/20 text-nutricare-dark rounded-full">
-                      {food.split(' (')[0]}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Friends Activity */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">{t('friends.title')}</h3>
-              {friends && friends.length > 0 ? (
-                <div className="space-y-3">
-                  {friends.slice(0, 3).map((friend: any, index: number) => (
-                    <div key={friend.id} className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-gradient-to-r from-blue-400 to-cyan-400 rounded-full flex items-center justify-center text-white text-sm font-semibold">
-                        {friend.firstName?.[0] || 'F'}
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm text-gray-700 dark:text-gray-300">
-                          <span className="font-medium">{friend.firstName}</span> {index % 2 === 0 ? t('friends.completed_goal') : t('friends.shared_recipe')}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">{Math.floor(Math.random() * 60)} mins ago</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-4">
-                  <p className="text-gray-500 dark:text-gray-400">No friend activity yet</p>
-                </div>
-              )}
-            </div>
+            {/* Nutrition Tips removed (moved to header popover) */}
           </div>
         </div>
 

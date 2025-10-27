@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/context/ThemeContext';
 import { useLanguage } from '@/context/LanguageContext';
 import { useAboutModal } from '@/context/AboutModalContext';
+import { getGenderSpecificTips, getGenderSpecificFoods } from '@/lib/nutritionCalculator';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { HelpDialog } from './HelpDialog';
@@ -24,8 +26,42 @@ const languageOptions = [
 export function Header({ onChatbotOpen }: HeaderProps = {}) {
 
   const [, setLocation] = useLocation();
+  const [showTips, setShowTips] = useState(false);
+  const tipsRef = useRef<HTMLDivElement | null>(null);
+  const tipsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [popoverStyle, setPopoverStyle] = useState<{ top: number; left: number } | null>(null);
+
+  // compute/popover position when opened and add outside-click listener
+  useEffect(() => {
+    if (!showTips) {
+      setPopoverStyle(null);
+      return;
+    }
+
+    const btn = tipsButtonRef.current;
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+
+    // position popover below the button, keep it inside viewport
+    const top = Math.min(window.innerHeight - 100, rect.bottom + 8);
+    const left = Math.min(window.innerWidth - 320, rect.right - 320 + 12);
+    setPopoverStyle({ top, left });
+
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (tipsRef.current && !tipsRef.current.contains(target) && btn && !btn.contains(target)) {
+        setShowTips(false);
+      }
+    };
+
+    window.addEventListener('mousedown', onDocClick);
+    window.addEventListener('scroll', () => setShowTips(false), { once: true });
+    return () => {
+      window.removeEventListener('mousedown', onDocClick);
+    };
+  }, [showTips]);
   const queryClient = useQueryClient();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user } = useAuth() as any;
   const { theme, toggleTheme } = useTheme();
   const { language, setLanguage, t } = useLanguage();
   const { toast } = useToast();
@@ -137,6 +173,60 @@ export function Header({ onChatbotOpen }: HeaderProps = {}) {
             {isAuthenticated && (
               <div className="flex items-center space-x-2">
                 {/* Reports */}
+                {/* Scan (moves from dashboard quick actions) */}
+                {/* Nutrition Tips Popover */}
+                <div className="relative">
+                  <button
+                    ref={tipsButtonRef}
+                    onClick={() => setShowTips(v => !v)}
+                    className="p-2 rounded-lg bg-pink-100 text-pink-600 hover:bg-pink-200 transition-all duration-200"
+                    title="Nutrition Tips"
+                    aria-expanded={showTips}
+                    aria-haspopup="true"
+                  >
+                    <i className="fas fa-lightbulb"></i>
+                  </button>
+
+                  {showTips && popoverStyle && createPortal(
+                    <div
+                      ref={tipsRef}
+                      style={{ position: 'fixed', top: popoverStyle.top, left: popoverStyle.left, zIndex: 9999 }}
+                      className="w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-4"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Nutrition Tips</h4>
+                        <button onClick={() => setShowTips(false)} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                          <i className="fas fa-times"></i>
+                        </button>
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-300 space-y-2 mb-3">
+                        {getGenderSpecificTips((user as any)?.gender || 'female').slice(0, 3).map((tip, i) => (
+                          <div key={i} className="flex items-start">
+                            <span className="mr-2 text-nutricare-green">•</span>
+                            <span className="leading-snug">{tip}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">Focus Foods</div>
+                        <div className="flex flex-wrap gap-1">
+                          {getGenderSpecificFoods((user as any)?.gender || 'female').focus.slice(0,6).map((f: string, idx: number) => (
+                            <span key={idx} className="text-xs px-2 py-1 bg-nutricare-green/20 text-nutricare-dark rounded-full">{f.split(' (')[0]}</span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>,
+                    document.body
+                  )}
+                </div>
+                <button
+                  onClick={() => handleNavigationClick('food')}
+                  className="p-2 rounded-lg bg-yellow-500 text-white hover:bg-yellow-600 transition-all duration-200"
+                  title="Scan Food Label"
+                >
+                  <i className="fas fa-camera-retro"></i>
+                </button>
+
                 <button
                   onClick={() => handleNavigationClick('reports')}
                   className="p-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-all duration-200"
@@ -172,14 +262,7 @@ export function Header({ onChatbotOpen }: HeaderProps = {}) {
                   <i className="fas fa-user-friends"></i>
                 </button>
 
-                {/* AI Chatbot */}
-                <button
-                  onClick={() => handleNavigationClick('chatbot')}
-                  className="p-2 rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition-all duration-200"
-                  title="AI Chatbot"
-                >
-                  <i className="fas fa-robot"></i>
-                </button>
+                {/* AI Chatbot removed from header per request */}
               </div>
             )}
 
