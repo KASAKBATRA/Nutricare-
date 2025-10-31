@@ -22,6 +22,7 @@ export const otpVerifications = pgTable("otp_verifications", {
   type: varchar("type").notNull(), // registration, password_reset
   expiresAt: timestamp("expires_at").notNull(),
   isUsed: boolean("is_used").default(false),
+  resendCount: integer("resend_count").default(0),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

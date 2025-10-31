@@ -106,6 +106,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = registerSchema.parse(req.body);
       const result = await registerUser(validatedData);
+      // If registerUser returned a 'resent' result, that's an existing unverified user
+      if ((result as any).resent) {
+        return res.json({ message: (result as any).message || 'Please verify your email. OTP resent.', email: (result as any).email, resent: true });
+      }
+
       res.json({ 
         message: "Registration successful. Please check your email for verification code.",
         email: result.email 

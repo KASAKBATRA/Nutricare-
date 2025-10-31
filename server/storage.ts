@@ -224,7 +224,65 @@ export class DatabaseStorage implements IStorage {
 
   // OTP operations
   async createOTP(otpData: InsertOtp): Promise<OtpVerification> {
-    const [otp] = await db.insert(otpVerifications).values(otpData).returning();
+    const now = new Date();
+    const normalizedEmail = String(otpData.email || '').trim().toLowerCase();
+
+    // Cleanup expired OTPs for this email/type first
+    await db
+      .delete(otpVerifications)
+      .where(
+        and(
+          eq(otpVerifications.email, normalizedEmail),
+          eq(otpVerifications.type, otpData.type),
+          lte(otpVerifications.expiresAt, now)
+        )
+      );
+
+    // Look for an existing active OTP for this email and type
+    const [existing] = await db
+      .select()
+      .from(otpVerifications)
+      .where(
+        and(
+          eq(otpVerifications.email, normalizedEmail),
+          eq(otpVerifications.type, otpData.type),
+          eq(otpVerifications.isUsed, false),
+          gt(otpVerifications.expiresAt, now)
+        )
+      )
+      .orderBy(desc(otpVerifications.createdAt))
+      .limit(1);
+
+    if (existing) {
+      const maxResends = 3;
+      const currentResends = Number(existing.resendCount || 0);
+      if (currentResends >= maxResends) {
+        throw new Error('Maximum resend attempts reached. Please try again later.');
+      }
+
+      // Update existing OTP record with a new code and increment resend count
+      const [updated] = await db
+        .update(otpVerifications)
+        .set({
+          otp: otpData.otp,
+          expiresAt: otpData.expiresAt,
+          resendCount: sql`${otpVerifications.resendCount} + 1`,
+          createdAt: new Date(),
+          isUsed: false,
+        })
+        .where(eq(otpVerifications.id, existing.id))
+        .returning();
+
+      return updated;
+    }
+
+    // Create a fresh OTP record
+    const [otp] = await db.insert(otpVerifications).values({
+      ...otpData,
+      email: normalizedEmail,
+      resendCount: 1,
+    }).returning();
+
     return otp;
   }
 
