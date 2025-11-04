@@ -10,6 +10,7 @@ import { isUnauthorizedError } from '@/lib/authUtils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -105,6 +106,11 @@ export default function Appointments() {
       queryClient.invalidateQueries({ queryKey: ['/api/nutritionist/appointments'] });
     },
   });
+
+  // Dialog state for nicer "Schedule Again" UX
+  const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false);
+  const [rescheduleAppointment, setRescheduleAppointment] = useState<any>(null);
+  const [rescheduleDate, setRescheduleDate] = useState<string>('');
 
   const handleBookAppointment = () => {
     if (!selectedNutritionist || !appointmentData.scheduledAt) {
@@ -252,22 +258,18 @@ export default function Appointments() {
                           // show Missed label and Schedule Again button
                           <>
                             <span className="px-3 py-1 rounded-full text-xs font-medium text-red-600 bg-red-100 dark:bg-red-900/20">Missed</span>
-                            <Button size="sm" onClick={async () => {
-                              const input = window.prompt('Enter new date-time (YYYY-MM-DDTHH:MM)', new Date().toISOString().slice(0,16));
-                              if (!input) return;
+                            <Button size="sm" onClick={() => {
+                              // Open dialog with prefilled date (local datetime-local value)
+                              setRescheduleAppointment(appt);
                               try {
-                                // convert to ISO if necessary
-                                const scheduledAt = new Date(input);
-                                if (isNaN(scheduledAt.getTime())) {
-                                  alert('Invalid date');
-                                  return;
-                                }
-                                await rescheduleMutation.mutateAsync({ id: appt.id, scheduledAt });
-                                toast({ title: 'Rescheduled', description: 'Appointment rescheduled successfully' });
-                              } catch (err) {
-                                console.error(err);
-                                toast({ title: 'Error', description: 'Failed to reschedule', variant: 'destructive' });
+                                const local = new Date(appt.scheduledAt);
+                                // format as YYYY-MM-DDTHH:MM for datetime-local
+                                const v = local.toISOString().slice(0,16);
+                                setRescheduleDate(v);
+                              } catch (e) {
+                                setRescheduleDate(new Date().toISOString().slice(0,16));
                               }
+                              setRescheduleDialogOpen(true);
                             }} className="bg-yellow-500">Schedule Again</Button>
                           </>
                         ) : (
@@ -394,6 +396,56 @@ export default function Appointments() {
             )}
           </CardContent>
         </Card>
+        {/* Reschedule dialog */}
+        <Dialog open={rescheduleDialogOpen} onOpenChange={(open) => setRescheduleDialogOpen(open)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Schedule a new time</DialogTitle>
+            </DialogHeader>
+
+            <div className="mt-2">
+              <label className="block text-sm font-medium mb-2">New Date & Time</label>
+              <Input
+                type="datetime-local"
+                value={rescheduleDate}
+                onChange={(e) => setRescheduleDate(e.target.value)}
+                min={new Date().toISOString().slice(0,16)}
+              />
+            </div>
+
+            <DialogFooter className="mt-4">
+              <div className="flex gap-2 w-full justify-end">
+                <Button variant="outline" onClick={() => setRescheduleDialogOpen(false)}>Cancel</Button>
+                <Button
+                  onClick={async () => {
+                    if (!rescheduleAppointment || !rescheduleDate) {
+                      toast({ title: 'Error', description: 'Please choose a valid date', variant: 'destructive' });
+                      return;
+                    }
+                    try {
+                      const iso = new Date(rescheduleDate);
+                      if (isNaN(iso.getTime())) {
+                        toast({ title: 'Error', description: 'Invalid date', variant: 'destructive' });
+                        return;
+                      }
+                      await rescheduleMutation.mutateAsync({ id: rescheduleAppointment.id, scheduledAt: iso.toISOString() });
+                      toast({ title: 'Rescheduled', description: 'Appointment rescheduled successfully' });
+                      setRescheduleDialogOpen(false);
+                      setRescheduleAppointment(null);
+                      setRescheduleDate('');
+                    } catch (err) {
+                      console.error(err);
+                      toast({ title: 'Error', description: 'Failed to reschedule', variant: 'destructive' });
+                    }
+                  }}
+                  className="bg-nutricare-green"
+                >
+                  Confirm
+                </Button>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
