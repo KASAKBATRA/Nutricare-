@@ -1084,7 +1084,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const appt = await storage.getAppointmentById(appointmentId);
       if (!appt) return res.status(404).json({ message: 'Appointment not found' });
-      if (String(appt.userId) !== String(userId)) return res.status(403).json({ message: 'Not allowed' });
+
+      // Allow reschedule by the user who booked OR by the assigned nutritionist user
+      const nutritionistsList = await storage.getNutritionists();
+      const nutritionist = (nutritionistsList || []).find((n: any) => String(n.id) === String(appt.nutritionistId));
+      const actorIsNutritionist = nutritionist && String(nutritionist.userId) === String(userId);
+      const actorIsOwner = String(appt.userId) === String(userId);
+      if (!actorIsOwner && !actorIsNutritionist) return res.status(403).json({ message: 'Not allowed' });
 
       // Coerce scheduledAt
       const newDate = new Date(scheduledAt);
@@ -1092,11 +1098,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       await storage.updateAppointmentSchedule(appointmentId, newDate);
 
-      // Notify nutritionist
+      // Notify the opposite party depending on who initiated the change
       try {
-        const nutritionistsList = await storage.getNutritionists();
-        const nutritionist = (nutritionistsList || []).find((n: any) => String(n.id) === String(appt.nutritionistId));
-        if (nutritionist) {
+        if (actorIsOwner && nutritionist) {
+          // user initiated -> notify nutritionist
           await storage.createNotification({
             userId: nutritionist.userId,
             type: 'appointment',
@@ -1105,7 +1110,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             data: { appointmentId },
           });
 
-          // Attempt email
           const nutrUser = await storage.getUser(nutritionist.userId);
           if (nutrUser && nutrUser.email) {
             await sendMail({
@@ -1114,48 +1118,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
               text: `User has requested to reschedule appointment on ${newDate.toLocaleString()}. Please review and accept or reject the request.`,
             }).catch(()=>{});
           }
+        } else if (actorIsNutritionist) {
+          // nutritionist initiated -> notify user
+          await storage.createNotification({
+            userId: appt.userId,
+            type: 'appointment',
+            title: 'Appointment time updated',
+            message: `Your appointment ${appointmentId} has been moved to ${newDate.toLocaleString()} by the nutritionist.`,
+            data: { appointmentId },
+          });
+
+          const user = await storage.getUser(appt.userId);
+          if (user && user.email) {
+            const subject = `Your appointment time was updated — ${newDate.toLocaleString()}`;
+            const html = `
+              <div style="font-family: Arial, sans-serif; max-width:600px; margin:0 auto; padding:20px;">
+                <div style="text-align:center; margin-bottom:20px;">
+                  <div style="background:linear-gradient(135deg,#10B981,#34D399); width:72px; height:72px; border-radius:50%; margin:0 auto 12px; display:flex; align-items:center; justify-content:center;">
+                    <span style="color:white; font-size:30px;">🌿</span>
+                  </div>
+                  <h2 style="color:#065f46; margin:0;">Your appointment time has been updated</h2>
+                </div>
+                <div style="background:#f8fffe; border:1px solid #d1fae5; border-radius:12px; padding:18px;">
+                  <p style="color:#374151; line-height:1.6;">Hi ${user.firstName || 'there'},</p>
+                  <p style="color:#374151; line-height:1.6;">The nutritionist has updated your consultation to <strong>${newDate.toLocaleString()}</strong>. This appointment will be an <strong>offline (in-person)</strong> consultation — please be prepared to attend at the scheduled location.</p>
+                  <p style="color:#374151; line-height:1.6;">If this time doesn't work for you, you may reschedule from your Appointments page.</p>
+                </div>
+                <div style="text-align:center; margin-top:18px; color:#9ca3af; font-size:12px;">© ${new Date().getFullYear()} NutriCare++. Healthy eating, happier you.</div>
+              </div>
+            `;
+            sendMail({ to: user.email, subject, html }).catch((e) => {
+              console.warn('Failed to send nutritionist-initiated reschedule email to user:', e);
+            });
+          }
         }
       } catch (nerr) {
-        console.warn('Failed to notify nutritionist about reschedule:', nerr);
-      }
-
-      // Also send a friendly confirmation email to the user acknowledging the reschedule request.
-      try {
-        const u = await storage.getUser(userId);
-        if (u && u.email) {
-          const subject = `We've received your reschedule request — ${newDate.toLocaleString()}`;
-          const html = `
-            <div style="font-family: Arial, sans-serif; max-width:600px; margin:0 auto; padding:20px;">
-              <div style="text-align:center; margin-bottom:20px;">
-                <div style="background:linear-gradient(135deg,#10B981,#34D399); width:72px; height:72px; border-radius:50%; margin:0 auto 12px; display:flex; align-items:center; justify-content:center;">
-                  <span style="color:white; font-size:30px;">🌿</span>
-                </div>
-                <h2 style="color:#065f46; margin:0;">You're all set — we've received your request</h2>
-              </div>
-              <div style="background:#f8fffe; border:1px solid #d1fae5; border-radius:12px; padding:18px;">
-                <p style="color:#374151; line-height:1.6;">Hi ${u.firstName || 'there'},</p>
-                <p style="color:#374151; line-height:1.6;">Thanks — we received your request to move your consultation to <strong>${newDate.toLocaleString()}</strong>. The nutritionist has been notified and will review the new time.</p>
-                <p style="color:#374151; line-height:1.6;">Note: This appointment will be an <strong>offline (in-person)</strong> consultation — please arrive at the agreed location a few minutes early. Bring any recent test reports or food logs you'd like the nutritionist to review.</p>
-                <div style="margin-top:12px; padding:12px; background:white; border-radius:8px; border:1px solid #e6fffa;">
-                  <strong style="color:#065f46;">Quick tips:</strong>
-                  <ul style="margin:8px 0 0 18px; color:#374151;">
-                    <li>Arrive 10 minutes early to check in.</li>
-                    <li>Bring any recent lab reports or dietary notes.</li>
-                    <li>If you need to change the time again, you can reschedule from your Appointments page.</li>
-                  </ul>
-                </div>
-                <p style="color:#6b7280; font-size:13px; margin-top:14px;">If you didn't request this change, please contact us and we'll help sort it out.</p>
-              </div>
-              <div style="text-align:center; margin-top:18px; color:#9ca3af; font-size:12px;">© ${new Date().getFullYear()} NutriCare++. Healthy eating, happier you.</div>
-            </div>
-          `;
-          // Best-effort email send; don't fail the request if email fails
-          sendMail({ to: u.email, subject, html }).catch((e) => {
-            console.warn('Failed to send reschedule confirmation to user:', e);
-          });
-        }
-      } catch (errMail) {
-        console.warn('Error building/sending user reschedule email:', errMail);
+        console.warn('Failed to create notifications about reschedule:', nerr);
       }
 
       res.json({ message: 'Reschedule requested' });
