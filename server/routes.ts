@@ -1090,6 +1090,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const [nutritionist] = await db.select().from(nutritionists).where(eq(nutritionists.id, appt.nutritionistId)).limit(1);
   const actorIsNutritionist = nutritionist && String(nutritionist.userId) === String(userId);
       const actorIsOwner = String(appt.userId) === String(userId);
+      // Debug logging to help trace unexpected 403s
+      console.log('RESCHEDULE DEBUG:', {
+        sessionUserId: userId,
+        apptId: appointmentId,
+        apptUserId: String(appt.userId),
+        apptNutritionistId: String(appt.nutritionistId),
+        nutritionistRecordUserId: nutritionist ? String(nutritionist.userId) : null,
+        actorIsOwner,
+        actorIsNutritionist,
+      });
       if (!actorIsOwner && !actorIsNutritionist) return res.status(403).json({ message: 'Not allowed' });
 
       // Coerce scheduledAt
