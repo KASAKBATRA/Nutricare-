@@ -12,8 +12,8 @@ declare module "express-session" {
 }
 import { storage } from "./storage";
 import { db } from "./db";
-import { users } from "@shared/schema";
-import { desc } from "drizzle-orm";
+import { users, nutritionists } from "@shared/schema";
+import { desc, eq } from "drizzle-orm";
 import { sendMail } from "./email";
 import { generateChatResponse } from "./openai";
 import { nutritionService, addMealSchema, type AddMealData } from "./nutrition";
@@ -1085,10 +1085,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const appt = await storage.getAppointmentById(appointmentId);
       if (!appt) return res.status(404).json({ message: 'Appointment not found' });
 
-      // Allow reschedule by the user who booked OR by the assigned nutritionist user
-      const nutritionistsList = await storage.getNutritionists();
-      const nutritionist = (nutritionistsList || []).find((n: any) => String(n.id) === String(appt.nutritionistId));
-      const actorIsNutritionist = nutritionist && String(nutritionist.userId) === String(userId);
+  // Allow reschedule by the user who booked OR by the assigned nutritionist user
+  // Fetch the nutritionist record directly by id (don't rely on availability filter)
+  const [nutritionist] = await db.select().from(nutritionists).where(eq(nutritionists.id, appt.nutritionistId)).limit(1);
+  const actorIsNutritionist = nutritionist && String(nutritionist.userId) === String(userId);
       const actorIsOwner = String(appt.userId) === String(userId);
       if (!actorIsOwner && !actorIsNutritionist) return res.status(403).json({ message: 'Not allowed' });
 
