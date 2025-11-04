@@ -9,6 +9,8 @@ import { getGenderSpecificTips, getGenderSpecificFoods } from '@/lib/nutritionCa
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { HelpDialog } from './HelpDialog';
+import { useScan } from '@/context/ScanContext';
+import ScanModal from './ScanModal';
 
 interface HeaderProps {
   onChatbotOpen?: () => void;
@@ -66,6 +68,7 @@ export function Header({ onChatbotOpen }: HeaderProps = {}) {
   const { language, setLanguage, t } = useLanguage();
   const { toast } = useToast();
   const { openAboutModal } = useAboutModal();
+  const scan = useScan();
 
   const handleLogin = () => {
     setLocation('/login');
@@ -219,13 +222,36 @@ export function Header({ onChatbotOpen }: HeaderProps = {}) {
                     document.body
                   )}
                 </div>
+                {/* Scan Food Label button (desktop) */}
+                <div className="relative">
+                  <button
+                    onClick={() => scan.open()}
+                    onKeyDown={(e) => { if (e.key === 'Enter') scan.open(); }}
+                    tabIndex={0}
+                    className="p-2 rounded-lg text-white transition-all duration-200 focus:outline-none transform hover:scale-105 hover:shadow-md"
+                    title="Scan Food Label"
+                    aria-label="Scan Food Label"
+                    style={{ backgroundColor: '#3cb371' }}
+                  >
+                    <i className="fas fa-camera-retro" style={{ fontSize: 20 }}></i>
+                  </button>
+                  {/* unread badge */}
+                  {scan.unread && (
+                    <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full" style={{ backgroundColor: scan.lastStatus === 'Healthy' ? '#22c55e' : scan.lastStatus === 'Moderate' ? '#f59e0b' : '#ef4444' }} />
+                  )}
+                </div>
+                {/* mobile floating button */}
                 <button
-                  onClick={() => handleNavigationClick('food')}
-                  className="p-2 rounded-lg bg-yellow-500 text-white hover:bg-yellow-600 transition-all duration-200"
+                  className="fixed bottom-4 right-4 z-50 p-3 rounded-full bg-nutricare-green text-white shadow-lg sm:hidden"
+                  onClick={() => scan.open()}
+                  onKeyDown={(e) => { if (e.key === 'Enter') scan.open(); }}
+                  aria-label="Scan Food Label"
                   title="Scan Food Label"
+                  style={{ width: 48, height: 48 }}
                 >
-                  <i className="fas fa-camera-retro"></i>
+                  <i className="fas fa-camera-retro" style={{ fontSize: 18 }}></i>
                 </button>
+                <ScanModal />
 
                 <button
                   onClick={() => handleNavigationClick('reports')}

@@ -25,13 +25,15 @@ export default function FoodLog() {
     foodName: '',
   });
 
-  const { data: foodLogs, isLoading } = useQuery({
+  // Scan/OCR removed per request
+
+  const { data: foodLogs, isLoading } = useQuery<any[]>({
     queryKey: ['/api/food-logs', selectedDate],
     enabled: isAuthenticated,
     retry: false,
   });
 
-  const { data: foodItems } = useQuery({
+  const { data: foodItems } = useQuery<any[]>({
     queryKey: ['/api/food-items'],
     enabled: isAuthenticated,
     retry: false,
@@ -89,6 +91,8 @@ export default function FoodLog() {
     });
   };
 
+  // OCR/scan handlers removed
+
   const groupedLogs = foodLogs?.reduce((acc: any, log: any) => {
     if (!acc[log.mealType]) {
       acc[log.mealType] = [];
@@ -128,6 +132,7 @@ export default function FoodLog() {
             <i className="fas fa-plus mr-2"></i>
             Add Food
           </Button>
+          {/* Scan Food Label removed */}
         </div>
 
         {/* Date Selector */}
@@ -232,10 +237,10 @@ export default function FoodLog() {
               <div className="flex space-x-4">
                 <Button 
                   onClick={handleAddMeal}
-                  disabled={addFoodLogMutation.isPending}
+                  disabled={addFoodLogMutation.status === 'pending'}
                   className="bg-nutricare-green hover:bg-nutricare-dark"
                 >
-                  {addFoodLogMutation.isPending ? 'Adding...' : 'Add Food'}
+                  {addFoodLogMutation.status === 'pending' ? 'Adding...' : 'Add Food'}
                 </Button>
                 <Button variant="outline" onClick={() => setShowAddForm(false)}>
                   Cancel
@@ -311,6 +316,8 @@ export default function FoodLog() {
             </Card>
           ))}
         </div>
+
+        {/* Scan UI removed */}
 
         {isLoading && (
           <div className="flex justify-center py-8">

@@ -8,12 +8,16 @@ import {
   waterLogs,
   weightLogs,
   nutritionists,
+  nutritionistSchedule,
   appointments,
   communityPosts,
   postLikes,
   postComments,
   friendships,
   notifications,
+  consultationNotes,
+  appointmentFeedback,
+  auditLogs,
   chatConversations,
   chatMessages,
   foodItems,
@@ -116,10 +120,21 @@ export interface IStorage {
   // Appointments
   getAppointments(userId: string): Promise<Appointment[]>;
   getNutritionistAppointments(nutritionistId: string): Promise<Appointment[]>;
+  getAppointmentById(id: string): Promise<Appointment | undefined>;
+  updateAppointmentSchedule(id: string, scheduledAt: Date): Promise<void>;
   createAppointment(appointment: InsertAppointment): Promise<Appointment>;
   updateAppointmentStatus(id: string, status: string): Promise<void>;
   getNutritionists(): Promise<Nutritionist[]>;
   createNutritionist(nutritionist: any): Promise<Nutritionist>;
+
+  // Scheduling & consultations
+  createScheduleSlot(nutritionistId: string, date: Date, startTime: Date, endTime: Date): Promise<any>;
+  getNutritionistSchedule(nutritionistId: string, fromDate?: Date): Promise<any[]>;
+  getAvailableSlots(nutritionistId: string, fromDate?: Date, days?: number): Promise<any[]>;
+  bookAppointment(appointmentData: any): Promise<any>;
+  addConsultationNotes(appointmentId: string, nutritionistId: string, summary: string, recommendations?: string): Promise<any>;
+  addAppointmentFeedback(appointmentId: string, rating: number, reviewText?: string): Promise<any>;
+  logAudit(userId: string | null, action: string, meta?: any): Promise<void>;
   
   // Community
   getCommunityPosts(limit?: number): Promise<(CommunityPost & { user: User; isLiked?: boolean })[]>;
@@ -133,6 +148,9 @@ export interface IStorage {
   sendFriendRequest(followerId: string, followingId: string): Promise<void>;
   acceptFriendRequest(followerId: string, followingId: string): Promise<void>;
   getFriendActivity(userId: string): Promise<any[]>;
+  removeFriendship(userA: string, userB: string): Promise<void>;
+  getMutualFriends(userId: string): Promise<User[]>;
+  getDiscoverCandidates(userId: string): Promise<any[]>;
   
   // Notifications
   getNotifications(userId: string): Promise<Notification[]>;
@@ -632,8 +650,54 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(appointments.scheduledAt));
   }
 
+  async getAppointmentById(id: string): Promise<Appointment | undefined> {
+    const [appt] = await db.select().from(appointments).where(eq(appointments.id, id)).limit(1);
+    return appt;
+  }
+
+  async updateAppointmentSchedule(id: string, scheduledAt: Date): Promise<void> {
+    await db.update(appointments).set({ scheduledAt, status: 'pending' }).where(eq(appointments.id, id));
+  }
+
   async createAppointment(appointment: InsertAppointment): Promise<Appointment> {
-    const [appt] = await db.insert(appointments).values(appointment).returning();
+    // Ensure scheduledAt is a JS Date for the DB driver
+    const toInsert = { ...appointment } as any;
+    function coerceToDate(val: any): Date | null {
+      if (!val && val !== 0) return null;
+      if (val instanceof Date) return val;
+      if (typeof val === 'number') return new Date(val);
+      if (typeof val === 'string') {
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      // Firebase-like timestamp { seconds, nanoseconds }
+      if (val && typeof val === 'object' && (val.seconds || val._seconds)) {
+        const secs = val.seconds ?? val._seconds;
+        return new Date(Number(secs) * 1000);
+      }
+      // moment-like
+      if (val && typeof val.toDate === 'function') {
+        try {
+          const d = val.toDate();
+          if (d instanceof Date) return d;
+        } catch (e) {}
+      }
+      // Last-ditch attempt
+      try {
+        const d = new Date((val as any).toString());
+        return isNaN(d.getTime()) ? null : d;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    const coerced = coerceToDate(toInsert.scheduledAt);
+    if (coerced) toInsert.scheduledAt = coerced;
+    else if (toInsert.scheduledAt != null) {
+      console.warn('createAppointment: could not coerce scheduledAt to Date:', toInsert.scheduledAt);
+    }
+
+    const [appt] = await db.insert(appointments).values(toInsert).returning();
     return appt;
   }
 
@@ -662,6 +726,107 @@ export class DatabaseStorage implements IStorage {
       consultationFee: nutritionist.consultationFee,
     }).returning();
     return created;
+  }
+
+  // Scheduling & consultations
+  async createScheduleSlot(nutritionistId: string, date: Date, startTime: Date, endTime: Date): Promise<any> {
+    const [slot] = await db.insert(nutritionistSchedule).values({
+      nutritionistId,
+      date,
+      startTime,
+      endTime,
+      status: 'Available',
+    }).returning();
+    return slot;
+  }
+
+  async getNutritionistSchedule(nutritionistId: string, fromDate?: Date): Promise<any[]> {
+    if (fromDate) {
+      return await db
+        .select()
+        .from(nutritionistSchedule)
+        .where(and(eq(nutritionistSchedule.nutritionistId, nutritionistId), gte(nutritionistSchedule.date, fromDate)))
+        .orderBy(desc(nutritionistSchedule.date));
+    }
+
+    return await db
+      .select()
+      .from(nutritionistSchedule)
+      .where(eq(nutritionistSchedule.nutritionistId, nutritionistId))
+      .orderBy(desc(nutritionistSchedule.date))
+      .limit(100);
+  }
+
+  async getAvailableSlots(nutritionistId: string, fromDate = new Date(), days = 7): Promise<any[]> {
+    const endDate = new Date(fromDate);
+    endDate.setDate(endDate.getDate() + days);
+    return await db.select().from(nutritionistSchedule)
+      .where(and(eq(nutritionistSchedule.nutritionistId, nutritionistId), eq(nutritionistSchedule.status, 'Available'), gte(nutritionistSchedule.date, fromDate), lte(nutritionistSchedule.date, endDate)))
+      .orderBy(nutritionistSchedule.date);
+  }
+
+  async bookAppointment(appointmentData: any): Promise<any> {
+    // Prevent double booking: check slot status
+    const slotId = appointmentData.slotId;
+    if (slotId) {
+      const [slot] = await db.select().from(nutritionistSchedule).where(eq(nutritionistSchedule.id, slotId)).limit(1);
+      if (!slot) throw new Error('Slot not found');
+      if (slot.status !== 'Available') throw new Error('Slot not available');
+
+      // Mark slot booked
+      await db.update(nutritionistSchedule).set({ status: 'Booked', updatedAt: new Date() }).where(eq(nutritionistSchedule.id, slotId));
+    }
+
+    function coerceToDate(val: any): Date | null {
+      if (!val && val !== 0) return null;
+      if (val instanceof Date) return val;
+      if (typeof val === 'number') return new Date(val);
+      if (typeof val === 'string') {
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      if (val && typeof val === 'object' && (val.seconds || val._seconds)) {
+        const secs = val.seconds ?? val._seconds;
+        return new Date(Number(secs) * 1000);
+      }
+      if (val && typeof val.toDate === 'function') {
+        try { const d = val.toDate(); if (d instanceof Date) return d; } catch (e) {}
+      }
+      try { const d = new Date((val as any).toString()); return isNaN(d.getTime()) ? null : d; } catch (e) { return null; }
+    }
+
+    const scheduledAt = coerceToDate(appointmentData.scheduledAt) ?? appointmentData.scheduledAt;
+
+    const [appt] = await db.insert(appointments).values({
+      userId: appointmentData.userId,
+      nutritionistId: appointmentData.nutritionistId,
+      scheduledAt,
+      duration: appointmentData.duration || 60,
+      status: 'pending',
+      notes: appointmentData.note || null,
+      createdAt: new Date(),
+    }).returning();
+
+    // Log audit
+    await db.insert(auditLogs).values({ userId: appointmentData.userId, action: 'book_appointment', meta: appointmentData }).catch(()=>null);
+
+    return appt;
+  }
+
+  async addConsultationNotes(appointmentId: string, nutritionistId: string, summary: string, recommendations?: string): Promise<any> {
+    const [note] = await db.insert(consultationNotes).values({ appointmentId, nutritionistId, summary, recommendations }).returning();
+    return note;
+  }
+
+  async addAppointmentFeedback(appointmentId: string, rating: number, reviewText?: string): Promise<any> {
+    const [fb] = await db.insert(appointmentFeedback).values({ appointmentId, rating, reviewText }).returning();
+    // update appointment rating fields if desired
+    await db.update(appointments).set({ rating }).where(eq(appointments.id, appointmentId));
+    return fb;
+  }
+
+  async logAudit(userId: string | null, action: string, meta?: any): Promise<void> {
+    await db.insert(auditLogs).values({ userId, action, meta }).catch(()=>null);
   }
 
   // Community
@@ -733,23 +898,34 @@ export class DatabaseStorage implements IStorage {
 
   // Friends
   async getFriends(userId: string): Promise<User[]> {
+    // Return users that the given user is following with accepted status (legacy behavior)
     const friends = await db
-      .select({
-        user: users,
-      })
+      .select({ user: users })
       .from(friendships)
       .innerJoin(users, eq(friendships.followingId, users.id))
-      .where(
-        and(
-          eq(friendships.followerId, userId),
-          eq(friendships.status, "accepted")
-        )
-      );
+      .where(and(eq(friendships.followerId, userId), eq(friendships.status, "accepted")));
 
     return friends.map(f => f.user);
   }
 
   async sendFriendRequest(followerId: string, followingId: string): Promise<void> {
+    // Avoid duplicate requests or existing accepted connections
+    const [existing] = await db
+      .select()
+      .from(friendships)
+      .where(
+        and(
+          eq(friendships.followerId, followerId),
+          eq(friendships.followingId, followingId)
+        )
+      )
+      .limit(1);
+
+    if (existing) {
+      // If already pending or accepted, do nothing
+      return;
+    }
+
     await db.insert(friendships).values({
       followerId,
       followingId,
@@ -758,37 +934,101 @@ export class DatabaseStorage implements IStorage {
   }
 
   async acceptFriendRequest(followerId: string, followingId: string): Promise<void> {
+    // Mark the original request as accepted
     await db
       .update(friendships)
       .set({ status: "accepted" })
+      .where(and(eq(friendships.followerId, followerId), eq(friendships.followingId, followingId)));
+
+    // Ensure reciprocal accepted row exists so both users see each other as friends
+    const [reciprocal] = await db
+      .select()
+      .from(friendships)
+      .where(and(eq(friendships.followerId, followingId), eq(friendships.followingId, followerId)))
+      .limit(1);
+
+    if (!reciprocal) {
+      await db.insert(friendships).values({
+        followerId: followingId,
+        followingId: followerId,
+        status: 'accepted',
+      });
+    } else if (reciprocal && reciprocal.status !== 'accepted') {
+      await db
+        .update(friendships)
+        .set({ status: 'accepted' })
+        .where(eq(friendships.id, reciprocal.id));
+    }
+  }
+
+  async removeFriendship(userA: string, userB: string): Promise<void> {
+    // Delete any friendship rows in either direction
+    await db
+      .delete(friendships)
       .where(
-        and(
-          eq(friendships.followerId, followerId),
-          eq(friendships.followingId, followingId)
+        or(
+          and(eq(friendships.followerId, userA), eq(friendships.followingId, userB)),
+          and(eq(friendships.followerId, userB), eq(friendships.followingId, userA))
         )
       );
   }
 
+  async getMutualFriends(userId: string): Promise<User[]> {
+    // For now, reuse getFriends (legacy) — this can be updated to enforce two-way mutual checks if desired
+    const friends = await this.getFriends(userId);
+    return friends;
+  }
+
   async getFriendActivity(userId: string): Promise<any[]> {
-    // Get recent activities from friends
+    // Get recent activities from accepted friends
     const activities = await db
-      .select({
-        user: users,
-        post: communityPosts,
-      })
-      .from(friendships)
-      .innerJoin(users, eq(friendships.followingId, users.id))
-      .leftJoin(communityPosts, eq(users.id, communityPosts.userId))
-      .where(
-        and(
-          eq(friendships.followerId, userId),
-          eq(friendships.status, "accepted")
-        )
-      )
+      .select({ user: users, post: communityPosts })
+      .from(communityPosts)
+      .innerJoin(users, eq(communityPosts.userId, users.id))
+      .where(sql`${communityPosts.userId} IN (SELECT following_id FROM friendships WHERE follower_id = ${userId} AND status = 'accepted')`)
       .orderBy(desc(communityPosts.createdAt))
-      .limit(10);
+      .limit(20);
 
     return activities;
+  }
+
+  async getDiscoverCandidates(userId: string): Promise<any[]> {
+    // More robust approach: fetch recent users (excluding current), then filter out already-followed ids
+    const recentUsers = await db
+      .select()
+      .from(users)
+      .where(sql`${users.id} != ${userId}`)
+      .orderBy(desc(users.createdAt))
+      .limit(100);
+
+    // Fetch the list of IDs the current user already follows
+    const followingRows = await db
+      .select({ fid: friendships.followingId })
+      .from(friendships)
+      .where(eq(friendships.followerId, userId));
+
+    const followingIds = new Set(followingRows.map((r: any) => r.fid));
+
+    const candidates = recentUsers
+      .filter((u: any) => !followingIds.has(u.id))
+      .slice(0, 50);
+
+    // Enrich with mutual friends count (simple count of shared followings)
+    const results = await Promise.all(candidates.map(async (u: any) => {
+      const [mutualRow] = await db
+        .select({ cnt: sql`COUNT(*)` })
+        .from(friendships)
+        .where(
+          and(
+            eq(friendships.followingId, u.id),
+            sql`${friendships.followerId} IN (SELECT following_id FROM friendships WHERE follower_id = ${userId} AND status = 'accepted')`
+          )
+        );
+      const mutual = (mutualRow && (mutualRow as any).cnt) || 0;
+      return { ...u, mutualCount: Number(mutual) };
+    }));
+
+    return results;
   }
 
   // Notifications

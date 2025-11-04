@@ -11,6 +11,9 @@ declare module "express-session" {
   }
 }
 import { storage } from "./storage";
+import { db } from "./db";
+import { users } from "@shared/schema";
+import { desc } from "drizzle-orm";
 import { sendMail } from "./email";
 import { generateChatResponse } from "./openai";
 import { nutritionService, addMealSchema, type AddMealData } from "./nutrition";
@@ -645,7 +648,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           oilType: (mealData as any).oilType || null,
           milkType: (mealData as any).milkType || null,
           sugarType: (mealData as any).sugarType || null,
-          ingredients: (mealData as any).ingredients ? JSON.stringify(mealData.ingredients) : null,
+          ingredients: (mealData as any).ingredients ? JSON.stringify((mealData as any).ingredients) : null,
           spiceLevel: (mealData as any).spiceLevel || null,
           utensilType: (mealData as any).utensilType || null,
           category: (mealData as any).category || null,
@@ -759,7 +762,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const milkMul = (milk_type && MILK_MULTIPLIERS && (MILK_MULTIPLIERS as any)[milk_type]) || 1.0;
       const intensityMul = (intensity && INTENSITY_MULTIPLIERS && (INTENSITY_MULTIPLIERS as any)[intensity]) || 1.0;
       const adjusted = Math.round(nutr.calories * oilMul * milkMul * intensityMul);
-      res.json({ base_calories: nutr.calories, adjusted_calories: adjusted, used_baseline: usedBaseline });
+      // Return expanded nutrition info so frontend can classify healthiness more reliably
+      res.json({
+        base_calories: nutr.calories,
+        adjusted_calories: adjusted,
+        used_baseline: usedBaseline,
+        protein: nutr.protein || 0,
+        carbs: nutr.carbs || 0,
+        fat: nutr.fat || 0,
+        fiber: nutr.fiber || 0,
+        sugar: nutr.sugar || 0,
+        sodium: nutr.sodium || 0,
+      });
     } catch (err: any) {
       console.error('Estimate calories error:', err);
       res.status(500).json({ message: 'Failed to estimate calories' });
@@ -903,7 +917,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(appointments);
     } catch (error) {
       console.error("Error fetching appointments:", error);
-      res.status(500).json({ message: "Failed to fetch appointments" });
+      console.error("Error creating appointment:", error);
+      const msg = (error && (error as any).message) ? (error as any).message : 'Failed to create appointment';
+      res.status(500).json({ message: msg });
     }
   });
 
@@ -965,6 +981,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+    // Nutritionist: get appointments assigned to them (default: pending)
+    app.get('/api/nutritionist/appointments', requireAuth, async (req: any, res) => {
+      try {
+        const userId = getUserId(req);
+        // Find nutritionist profile for this user
+        const nutritionistsList = await storage.getNutritionists();
+        const nutritionist = (nutritionistsList || []).find((n: any) => String(n.userId) === String(userId));
+        if (!nutritionist) return res.status(403).json({ message: 'Not a nutritionist' });
+
+        const appointments = await storage.getNutritionistAppointments(nutritionist.id);
+        // By default, return pending first
+        const pendingFirst = (appointments || []).sort((a: any, b: any) => {
+          const order = { pending: 0, confirmed: 1, completed: 2, cancelled: 3 } as any;
+          return (order[a.status] || 9) - (order[b.status] || 9) || new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+        });
+        res.json(pendingFirst);
+      } catch (error) {
+        console.error('Error fetching nutritionist appointments:', error);
+        res.status(500).json({ message: 'Failed to fetch appointments' });
+      }
+    });
+
+    // Nutritionist decision endpoint: accept or reject an appointment
+    app.post('/api/nutritionist/appointments/:id/decision', requireAuth, async (req: any, res) => {
+      try {
+        const userId = getUserId(req);
+        const appointmentId = req.params.id;
+        const { action } = req.body || {}; // expected 'accept' or 'reject'
+
+        if (!action || !['accept', 'reject', 'cancel'].includes(action)) {
+          return res.status(400).json({ message: 'Invalid action' });
+        }
+
+        // Find nutritionist profile for this user
+        const nutritionistsList = await storage.getNutritionists();
+        const nutritionist = (nutritionistsList || []).find((n: any) => String(n.userId) === String(userId));
+        if (!nutritionist) return res.status(403).json({ message: 'Not a nutritionist' });
+
+        // Fetch the appointment and ensure it belongs to this nutritionist
+        const appts = await storage.getNutritionistAppointments(nutritionist.id);
+        const appointment = (appts || []).find((a: any) => String(a.id) === String(appointmentId));
+        if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
+
+        let newStatus = 'pending';
+        if (action === 'accept') newStatus = 'confirmed';
+        if (action === 'reject' || action === 'cancel') newStatus = 'cancelled';
+
+        await storage.updateAppointmentStatus(appointmentId, newStatus);
+
+        // Notify the user
+        try {
+          await storage.createNotification({
+            userId: appointment.userId,
+            type: 'appointment',
+            title: `Appointment ${newStatus}`,
+            message: `Your appointment scheduled on ${new Date(appointment.scheduledAt).toLocaleString()} has been ${newStatus}.`,
+            data: { appointmentId },
+          });
+        } catch (nerr) {
+          console.warn('Failed to create notification for appointment decision:', nerr);
+        }
+
+        // Send email to the user informing about the decision
+        try {
+          const user = await storage.getUser(appointment.userId);
+          if (user && user.email) {
+            await sendMail({
+              to: user.email,
+              subject: `Your appointment has been ${newStatus}`,
+              text: `Hello ${user.firstName || ''},\n\nYour appointment scheduled on ${new Date(appointment.scheduledAt).toLocaleString()} has been ${newStatus} by the nutritionist.\n\nRegards,\nNutriCare++`,
+            });
+          }
+        } catch (e) {
+          console.warn('Failed to send email for appointment decision:', e);
+        }
+
+        res.json({ message: 'OK', status: newStatus });
+      } catch (error) {
+        console.error('Error processing nutritionist decision:', error);
+        res.status(500).json({ message: 'Failed to process decision' });
+      }
+    });
+
   app.get('/api/nutritionists', requireAuth, async (req, res) => {
     try {
       const nutritionists = await storage.getNutritionists();
@@ -972,6 +1071,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching nutritionists:", error);
       res.status(500).json({ message: "Failed to fetch nutritionists" });
+    }
+  });
+
+  // User: reschedule an appointment (request change) -> sets status to 'pending' and notifies nutritionist
+  app.post('/api/appointments/:id/reschedule', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      const appointmentId = req.params.id;
+      const { scheduledAt } = req.body || {};
+      if (!scheduledAt) return res.status(400).json({ message: 'scheduledAt is required' });
+
+      const appt = await storage.getAppointmentById(appointmentId);
+      if (!appt) return res.status(404).json({ message: 'Appointment not found' });
+      if (String(appt.userId) !== String(userId)) return res.status(403).json({ message: 'Not allowed' });
+
+      // Coerce scheduledAt
+      const newDate = new Date(scheduledAt);
+      if (isNaN(newDate.getTime())) return res.status(400).json({ message: 'Invalid date' });
+
+      await storage.updateAppointmentSchedule(appointmentId, newDate);
+
+      // Notify nutritionist
+      try {
+        const nutritionistsList = await storage.getNutritionists();
+        const nutritionist = (nutritionistsList || []).find((n: any) => String(n.id) === String(appt.nutritionistId));
+        if (nutritionist) {
+          await storage.createNotification({
+            userId: nutritionist.userId,
+            type: 'appointment',
+            title: 'Reschedule Request',
+            message: `User requested to reschedule appointment ${appointmentId} to ${newDate.toLocaleString()}`,
+            data: { appointmentId },
+          });
+
+          // Attempt email
+          const nutrUser = await storage.getUser(nutritionist.userId);
+          if (nutrUser && nutrUser.email) {
+            await sendMail({
+              to: nutrUser.email,
+              subject: 'Reschedule request for appointment',
+              text: `User has requested to reschedule appointment on ${newDate.toLocaleString()}. Please review and accept or reject the request.`,
+            }).catch(()=>{});
+          }
+        }
+      } catch (nerr) {
+        console.warn('Failed to notify nutritionist about reschedule:', nerr);
+      }
+
+      res.json({ message: 'Reschedule requested' });
+    } catch (error) {
+      console.error('Error rescheduling appointment:', error);
+      res.status(500).json({ message: 'Failed to reschedule' });
     }
   });
 
@@ -1019,6 +1170,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching friends:", error);
       res.status(500).json({ message: "Failed to fetch friends" });
+    }
+  });
+
+  // Send friend request by email
+  app.post('/api/friends/request', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      const { email } = req.body || {};
+      if (!email) return res.status(400).json({ message: 'email is required' });
+      const target = await storage.getUserByEmail(String(email).trim().toLowerCase());
+      if (!target) return res.status(404).json({ message: 'User not found' });
+      if (target.id === userId) return res.status(400).json({ message: "Cannot add yourself" });
+
+      await storage.sendFriendRequest(userId, target.id);
+      res.json({ message: 'Friend request sent' });
+    } catch (err: any) {
+      console.error('Error sending friend request:', err);
+      res.status(500).json({ message: 'Failed to send friend request' });
+    }
+  });
+
+  // Accept a friend request (followerId is the id of the requester)
+  app.post('/api/friends/accept', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      const { followerId } = req.body || {};
+      if (!followerId) return res.status(400).json({ message: 'followerId is required' });
+
+      await storage.acceptFriendRequest(String(followerId), userId);
+      res.json({ message: 'Friend request accepted' });
+    } catch (err: any) {
+      console.error('Error accepting friend request:', err);
+      res.status(500).json({ message: 'Failed to accept friend request' });
+    }
+  });
+
+  // Remove friendship (either direction)
+  app.delete('/api/friends', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      const { userId: otherId } = req.body || {};
+      if (!otherId) return res.status(400).json({ message: 'userId is required in body' });
+
+      await storage.removeFriendship(userId, String(otherId));
+      res.json({ message: 'Friend removed' });
+    } catch (err: any) {
+      console.error('Error removing friendship:', err);
+      res.status(500).json({ message: 'Failed to remove friendship' });
+    }
+  });
+
+  // Discover candidates
+  app.get('/api/friends/discover', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      const candidates = await storage.getDiscoverCandidates(userId);
+      res.json(candidates);
+    } catch (err: any) {
+      console.error('Error fetching discover candidates:', err);
+      res.status(500).json({ message: 'Failed to fetch candidates' });
+    }
+  });
+
+  // Debug endpoint to inspect raw discover candidates (for development)
+  app.get('/api/friends/discover-debug', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      // For debugging, return the raw users table rows (recent) and the candidate list
+      const recentUsers = await db.select().from(users).orderBy(desc(users.createdAt)).limit(100);
+      const candidates = await storage.getDiscoverCandidates(userId);
+      res.json({ recentCount: recentUsers.length, recentUsers: recentUsers.slice(0, 20), candidatesCount: candidates.length, candidates: candidates.slice(0, 50) });
+    } catch (err: any) {
+      console.error('Discover debug error:', err);
+      res.status(500).json({ message: 'Discover debug failed' });
     }
   });
 

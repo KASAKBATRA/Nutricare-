@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 
 export default function Community() {
   const { user, isAuthenticated } = useAuth();
+  const userAny = user as any;
   const { t } = useLanguage();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -22,7 +23,7 @@ export default function Community() {
     imageUrl: '',
   });
 
-  const { data: posts, isLoading } = useQuery({
+  const { data: posts, isLoading } = useQuery<any[]>({
     queryKey: ['/api/community/posts'],
     enabled: isAuthenticated,
     retry: false,
@@ -130,7 +131,7 @@ export default function Community() {
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Community Feed</h1>
             <p className="text-gray-600 dark:text-gray-400">Share your health journey with others</p>
           </div>
-          <Button 
+                <Button 
             onClick={() => setShowCreatePost(!showCreatePost)}
             className="bg-nutricare-green hover:bg-nutricare-dark"
           >
@@ -144,21 +145,21 @@ export default function Community() {
           <Card className="mb-8">
             <CardHeader>
               <div className="flex items-center space-x-3">
-                {user?.profileImageUrl ? (
+                {userAny?.profileImageUrl ? (
                   <img
-                    src={user.profileImageUrl}
+                    src={userAny.profileImageUrl}
                     alt="Profile"
                     className="w-10 h-10 rounded-full object-cover"
                   />
                 ) : (
                   <div className="w-10 h-10 bg-nutricare-green rounded-full flex items-center justify-center text-white font-semibold">
-                    {user?.firstName?.[0] || 'U'}
+                    {userAny?.firstName?.[0] || 'U'}
                   </div>
                 )}
                 <div>
-                  <h3 className="font-semibold text-gray-900 dark:text-white">
-                    {user?.firstName} {user?.lastName}
-                  </h3>
+                      <h3 className="font-semibold text-gray-900 dark:text-white">
+                        {userAny?.firstName} {userAny?.lastName}
+                      </h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">Share your thoughts...</p>
                 </div>
               </div>
@@ -180,10 +181,10 @@ export default function Community() {
               <div className="flex space-x-4">
                 <Button 
                   onClick={handleCreatePost}
-                  disabled={createPostMutation.isPending}
+                  disabled={createPostMutation.status === 'pending'}
                   className="bg-nutricare-green hover:bg-nutricare-dark"
                 >
-                  {createPostMutation.isPending ? 'Posting...' : 'Share Post'}
+                  {createPostMutation.status === 'pending' ? 'Posting...' : 'Share Post'}
                 </Button>
                 <Button variant="outline" onClick={() => setShowCreatePost(false)}>
                   Cancel
@@ -251,7 +252,7 @@ export default function Community() {
                     <div className="flex items-center space-x-6">
                       <button
                         onClick={() => handleLikePost(post.id)}
-                        disabled={likePostMutation.isPending}
+                        disabled={likePostMutation.status === 'pending'}
                         className="flex items-center space-x-2 text-gray-500 hover:text-red-500 transition-colors"
                       >
                         <i className={`${post.isLiked ? 'fas' : 'far'} fa-heart ${post.isLiked ? 'text-red-500' : ''}`}></i>

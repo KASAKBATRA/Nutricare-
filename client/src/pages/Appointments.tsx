@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function Appointments() {
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth() as any;
   const { t } = useLanguage();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -73,6 +73,36 @@ export default function Appointments() {
         description: "Failed to book appointment. Please try again.",
         variant: "destructive",
       });
+    },
+  });
+
+  // Nutritionist-specific data
+  const { data: nutritionistAppointmentsRaw, isLoading: nutrLoading } = useQuery({
+    queryKey: ['/api/nutritionist/appointments'],
+    enabled: isAuthenticated,
+    retry: false,
+  });
+  const nutritionistAppointments = Array.isArray(nutritionistAppointmentsRaw) ? nutritionistAppointmentsRaw : [];
+
+  const decisionMutation = useMutation({
+    mutationFn: async ({ id, action }: any) => {
+      const res = await apiRequest('POST', `/api/nutritionist/appointments/${id}/decision`, { action });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/nutritionist/appointments'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/appointments'] });
+    },
+  });
+
+  const rescheduleMutation = useMutation({
+    mutationFn: async ({ id, scheduledAt }: any) => {
+      const res = await apiRequest('POST', `/api/appointments/${id}/reschedule`, { scheduledAt });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/appointments'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/nutritionist/appointments'] });
     },
   });
 
@@ -150,7 +180,7 @@ export default function Appointments() {
           }}
         />
 
-        {/* Booking Form */}
+  {/* Booking Form */}
         {showBookingForm && selectedNutritionist && (
           <Card className="mb-8 glass shadow-lg border-none">
             <CardHeader>
@@ -192,6 +222,32 @@ export default function Appointments() {
                 <Button variant="outline" onClick={() => setShowBookingForm(false)}>
                   Cancel
                 </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Nutritionist dashboard: pending requests */}
+        {isAuthenticated && nutritionistAppointments.length > 0 && user && (
+          <Card className="mb-8 glass shadow-lg border-none">
+            <CardHeader>
+              <CardTitle>Incoming Appointment Requests</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {nutritionistAppointments.map((appt: any) => (
+                  <div key={appt.id} className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <div>
+                      <p className="font-semibold">Requested by: {appt.userId}</p>
+                      <p className="text-sm text-gray-500">When: {new Date(appt.scheduledAt).toLocaleString()}</p>
+                      {appt.notes && <p className="text-xs text-gray-500">Notes: {appt.notes}</p>}
+                    </div>
+                    <div className="flex space-x-2">
+                      <Button size="sm" onClick={() => decisionMutation.mutate({ id: appt.id, action: 'accept' })} className="bg-green-500">Accept</Button>
+                      <Button size="sm" variant="destructive" onClick={() => decisionMutation.mutate({ id: appt.id, action: 'reject' })}>Reject</Button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>

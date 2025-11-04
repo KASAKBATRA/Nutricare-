@@ -1,32 +1,7 @@
 
-import React, { useEffect, useState, ChangeEvent, useRef } from 'react';
-import Tesseract from 'tesseract.js';
+import React, { useEffect, useState } from 'react';
 
-// Simple nutrition facts parser (expand as needed)
-function parseNutritionFacts(text: string) {
-  const getVal = (label: string, regex: RegExp) => {
-    const match = text.match(regex);
-    return match ? parseFloat(match[1]) : undefined;
-  };
-  return {
-    calories: getVal('calories', /calories[^\d]*(\d+)/i),
-    sugar: getVal('sugar', /sugar[^\d]*(\d+)/i),
-    fat: getVal('fat', /fat[^\d]*(\d+)/i),
-    protein: getVal('protein', /protein[^\d]*(\d+)/i),
-    sodium: getVal('sodium', /sodium[^\d]*(\d+)/i),
-    fiber: getVal('fiber', /fiber[^\d]*(\d+)/i),
-  };
-}
-
-// Simple health classification rules
-function classifyHealth(facts: any) {
-  if (!facts) return { status: 'Unknown', explanation: 'Could not extract nutrition facts.' };
-  if (facts.sugar && facts.sugar > 10) return { status: 'Unhealthy', explanation: `High sugar (${facts.sugar}g per serving)` };
-  if (facts.sodium && facts.sodium > 400) return { status: 'Unhealthy', explanation: `High sodium (${facts.sodium}mg per serving)` };
-  if (facts.protein && facts.protein > 5 && facts.fat && facts.fat < 5 && facts.fiber && facts.fiber > 3)
-    return { status: 'Healthy', explanation: 'High protein, low fat, fiber rich' };
-  return { status: 'Moderate', explanation: 'No major red flags detected.' };
-}
+// OCR/label-scan removed per request
 
 // Handle file upload
 // (Removed duplicate handleLabelImageChange to avoid redeclaration error)
@@ -100,63 +75,7 @@ import { GenderSpecificMicronutrients } from '@/components/GenderSpecificMicronu
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 
 export default function Dashboard() {
-  // OCR and Health Classification State (must be inside component)
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [labelImage, setLabelImage] = useState<File | null>(null);
-  const [ocrText, setOcrText] = useState<string>('');
-  const [nutritionFacts, setNutritionFacts] = useState<any>(null);
-  const [healthResult, setHealthResult] = useState<{ status: string; explanation: string } | null>(null);
-
-  // Open file picker when Scan Food Label is clicked
-  const handleScanFoodLabelClick = () => {
-    if (fileInputRef.current) fileInputRef.current.click();
-  };
-
-  // Suggest alternatives based on food type or unhealthy result
-  const [alternatives, setAlternatives] = useState<string[]>([]);
-
-  // OCR and classification logic
-  const handleLabelImageChange = async (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setLabelImage(file);
-      setOcrText('');
-      setNutritionFacts(null);
-      setHealthResult(null);
-      setAlternatives([]);
-
-      // OCR with Tesseract.js
-      const { data: { text } } = await Tesseract.recognize(file, 'eng');
-      setOcrText(text);
-
-      // Parse nutrition facts from OCR text
-      const facts = parseNutritionFacts(text);
-      setNutritionFacts(facts);
-
-      // Classify healthiness
-      const result = classifyHealth(facts);
-      setHealthResult(result);
-
-      // Suggest alternatives (simple keyword-based)
-      const lowerText = text.toLowerCase();
-      let alt: string[] = [];
-      if (lowerText.includes('chips') || lowerText.includes('lays')) {
-        alt = ['Roasted chickpeas', 'Baked veggie chips', 'Air-popped popcorn', 'Roasted makhana', 'Homemade sweet potato chips'];
-      } else if (lowerText.includes('cola') || lowerText.includes('soda')) {
-        alt = ['Sparkling water with lemon', 'Coconut water', 'Fresh lime soda (unsweetened)', 'Infused water', 'Buttermilk (chaas)'];
-      } else if (lowerText.includes('chocolate')) {
-        alt = ['Dark chocolate (70%+)', 'Roasted nuts', 'Fruit & nut bars', 'Dates stuffed with nuts'];
-      } else if (lowerText.includes('biscuit') || lowerText.includes('cookie')) {
-        alt = ['Oats cookies', 'Whole wheat crackers', 'Homemade granola bars', 'Khakhra'];
-      } else if (lowerText.includes('namkeen') || lowerText.includes('mixture')) {
-        alt = ['Roasted chana', 'Bhel with sprouts', 'Murmura (puffed rice) snack', 'Roasted peanuts'];
-      }
-      if (result.status === 'Unhealthy' && alt.length === 0) {
-        alt = ['Fresh fruits', 'Roasted nuts', 'Homemade snacks', 'Yogurt with seeds', 'Vegetable sticks with hummus'];
-      }
-      setAlternatives(alt);
-    }
-  };
+  // OCR/label-scan removed per request
   // Define a User type with at least firstName property
   interface User {
     firstName?: string;
@@ -431,73 +350,7 @@ export default function Dashboard() {
   return (
     <Layout showSidebar={true}>
       <div className="p-6 lg:p-8">
-        {/* Food Label Upload & OCR */}
-
-        {/* Food Label OCR & Health Classification Modal (Glassmorphism) */}
-        {labelImage && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" style={{ animation: 'fadeIn 0.2s' }}>
-            <div className="relative w-full max-w-md mx-auto p-6 rounded-2xl shadow-2xl"
-              style={{
-                background: 'rgba(255,255,255,0.25)',
-                boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.37)',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-                border: '1px solid rgba(255,255,255,0.18)',
-              }}
-            >
-              <button
-                className="absolute top-2 right-2 text-gray-700 bg-white/60 hover:bg-white/90 rounded-full p-1 shadow"
-                onClick={() => {
-                  setLabelImage(null);
-                  setOcrText('');
-                  setNutritionFacts(null);
-                  setHealthResult(null);
-                }}
-                aria-label="Close"
-              >
-                <span className="text-lg">×</span>
-              </button>
-              <div className="flex flex-col items-center">
-                <img src={URL.createObjectURL(labelImage)} alt="Label Preview" className="max-h-32 rounded-xl shadow mb-4 border border-white/40" />
-                {healthResult && (
-                  <div className="mb-2 px-4 py-2 rounded-xl font-semibold text-center text-lg"
-                    style={{
-                      background: healthResult.status === 'Healthy' ? 'rgba(16,185,129,0.15)' : healthResult.status === 'Unhealthy' ? 'rgba(239,68,68,0.15)' : 'rgba(253,224,71,0.15)',
-                      color: healthResult.status === 'Healthy' ? '#059669' : healthResult.status === 'Unhealthy' ? '#dc2626' : '#b45309',
-                    }}
-                  >
-                    {healthResult.status === 'Healthy' && '✅'}
-                    {healthResult.status === 'Unhealthy' && '❌'}
-                    {healthResult.status === 'Moderate' && '⚠️'}
-                    {healthResult.status}: {healthResult.explanation}
-                  </div>
-                )}
-                {alternatives.length > 0 && (
-                  <div className="mb-2 px-4 py-2 rounded-xl bg-white/60 shadow text-sm text-gray-800">
-                    <strong>Healthier Alternatives:</strong>
-                    <ul className="list-disc ml-5 mt-1">
-                      {alternatives.map((alt, i) => (
-                        <li key={i}>{alt}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {nutritionFacts && (
-                  <div className="w-full mb-2 p-2 rounded-xl bg-white/40 text-xs text-gray-800 shadow-inner">
-                    <strong>Nutrition Facts:</strong>
-                    <pre className="whitespace-pre-wrap">{JSON.stringify(nutritionFacts, null, 2)}</pre>
-                  </div>
-                )}
-                {ocrText && (
-                  <div className="w-full p-2 rounded-xl bg-white/30 text-xs text-gray-700 max-h-40 overflow-y-auto shadow-inner">
-                    <strong>Extracted Text:</strong>
-                    <pre className="whitespace-pre-wrap">{ocrText}</pre>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Scan feature removed */}
 
         {/* Dashboard Header */}
         <div className="mb-8">
