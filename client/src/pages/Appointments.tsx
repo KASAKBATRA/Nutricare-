@@ -235,19 +235,52 @@ export default function Appointments() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {nutritionistAppointments.map((appt: any) => (
-                  <div key={appt.id} className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                    <div>
-                      <p className="font-semibold">Requested by: {appt.userId}</p>
-                      <p className="text-sm text-gray-500">When: {new Date(appt.scheduledAt).toLocaleString()}</p>
-                      {appt.notes && <p className="text-xs text-gray-500">Notes: {appt.notes}</p>}
+                {nutritionistAppointments.map((appt: any) => {
+                  const apptDate = new Date(appt.scheduledAt);
+                  const isPast = apptDate.getTime() < Date.now();
+                  const isConfirmed = appt.status === 'confirmed' || appt.status === 'accepted';
+
+                  return (
+                    <div key={appt.id} className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                      <div>
+                        <p className="font-semibold">Requested by: {appt.userId}</p>
+                        <p className="text-sm text-gray-500">When: {apptDate.toLocaleString()}</p>
+                        {appt.notes && <p className="text-xs text-gray-500">Notes: {appt.notes}</p>}
+                      </div>
+                      <div className="flex space-x-2 items-center">
+                        {isPast && !isConfirmed ? (
+                          // show Missed label and Schedule Again button
+                          <>
+                            <span className="px-3 py-1 rounded-full text-xs font-medium text-red-600 bg-red-100 dark:bg-red-900/20">Missed</span>
+                            <Button size="sm" onClick={async () => {
+                              const input = window.prompt('Enter new date-time (YYYY-MM-DDTHH:MM)', new Date().toISOString().slice(0,16));
+                              if (!input) return;
+                              try {
+                                // convert to ISO if necessary
+                                const scheduledAt = new Date(input);
+                                if (isNaN(scheduledAt.getTime())) {
+                                  alert('Invalid date');
+                                  return;
+                                }
+                                await rescheduleMutation.mutateAsync({ id: appt.id, scheduledAt });
+                                toast({ title: 'Rescheduled', description: 'Appointment rescheduled successfully' });
+                              } catch (err) {
+                                console.error(err);
+                                toast({ title: 'Error', description: 'Failed to reschedule', variant: 'destructive' });
+                              }
+                            }} className="bg-yellow-500">Schedule Again</Button>
+                          </>
+                        ) : (
+                          // normal accept/reject
+                          <>
+                            <Button size="sm" onClick={() => decisionMutation.mutate({ id: appt.id, action: 'accept' })} className="bg-green-500">Accept</Button>
+                            <Button size="sm" variant="destructive" onClick={() => decisionMutation.mutate({ id: appt.id, action: 'reject' })}>Reject</Button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex space-x-2">
-                      <Button size="sm" onClick={() => decisionMutation.mutate({ id: appt.id, action: 'accept' })} className="bg-green-500">Accept</Button>
-                      <Button size="sm" variant="destructive" onClick={() => decisionMutation.mutate({ id: appt.id, action: 'reject' })}>Reject</Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
