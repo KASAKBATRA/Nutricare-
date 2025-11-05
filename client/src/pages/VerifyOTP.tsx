@@ -37,8 +37,14 @@ export default function VerifyOTP() {
     const emailParam = urlParams.get('email');
     const typeParam = urlParams.get('type');
     
+    // Prefer URL param, fallback to localStorage saved during registration/login flows
+    const storedEmail = localStorage.getItem('pending_email');
+    const storedType = localStorage.getItem('pending_type');
+
     if (emailParam) setEmail(emailParam);
+    else if (storedEmail) setEmail(storedEmail);
     if (typeParam) setType(typeParam);
+    else if (storedType) setType(storedType);
     
     if (!emailParam) {
       toast({
@@ -84,6 +90,12 @@ export default function VerifyOTP() {
           : "Email verified. You can now reset your password.",
       });
 
+        // Clear pending email/type on success
+        try {
+          localStorage.removeItem('pending_email');
+          localStorage.removeItem('pending_type');
+        } catch (e) {}
+
       // Redirect based on type
       if (type === 'registration') {
         setLocation('/calibration');
@@ -122,6 +134,12 @@ export default function VerifyOTP() {
       if (!response.ok) {
         throw new Error(result.message || 'Failed to resend OTP');
       }
+
+      // Ensure email is saved in localStorage so verification continues
+      try {
+        localStorage.setItem('pending_email', email);
+        localStorage.setItem('pending_type', type);
+      } catch (e) {}
 
       toast({
         title: "OTP Sent",

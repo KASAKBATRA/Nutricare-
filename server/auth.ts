@@ -58,7 +58,26 @@ export async function registerUser(userData: z.infer<typeof registerSchema>) {
   // Check if user already exists
   const existingUser = await storage.getUserByEmail(userData.email);
   if (existingUser) {
-    throw new Error('User with this email already exists');
+    // If user exists but not verified, resend OTP and instruct to verify
+    if (!existingUser.isVerified) {
+      const otp = generateOTP();
+      const expiresAt = new Date();
+      expiresAt.setMinutes(expiresAt.getMinutes() + 5); // 5 minutes expiry
+
+      await storage.createOTP({
+        email: userData.email.toLowerCase(),
+        otp,
+        type: 'registration',
+        expiresAt,
+      });
+
+      await sendOTPEmail(userData.email, otp, 'registration');
+
+      return { email: existingUser.email, resent: true, message: 'Please verify your email. OTP resent.' };
+    }
+
+    // Already verified
+    throw new Error('User already exists.');
   }
 
   let user;
@@ -207,8 +226,9 @@ export async function resetPassword(email: string, otp: string, newPassword: str
 }
 
 export async function resendOTP(email: string, type: string) {
-  const user = await storage.getUserByEmail(email);
-  
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const user = await storage.getUserByEmail(normalizedEmail);
+
   if (!user) {
     throw new Error('No account found with this email address');
   }
@@ -219,13 +239,13 @@ export async function resendOTP(email: string, type: string) {
   expiresAt.setMinutes(expiresAt.getMinutes() + 5);
 
   await storage.createOTP({
-    email,
+    email: normalizedEmail,
     otp,
     type,
     expiresAt,
   });
 
-  await sendOTPEmail(email, otp, type as 'registration' | 'password_reset');
+  await sendOTPEmail(normalizedEmail, otp, type as 'registration' | 'password_reset');
 
   return { success: true };
 }

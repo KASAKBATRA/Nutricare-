@@ -22,6 +22,7 @@ export const otpVerifications = pgTable("otp_verifications", {
   type: varchar("type").notNull(), // registration, password_reset
   expiresAt: timestamp("expires_at").notNull(),
   isUsed: boolean("is_used").default(false),
+  resendCount: integer("resend_count").default(0),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -112,8 +113,28 @@ export const foodLogs = pgTable("food_logs", {
   protein: decimal("protein", { precision: 8, scale: 2 }),
   carbs: decimal("carbs", { precision: 8, scale: 2 }),
   fat: decimal("fat", { precision: 8, scale: 2 }),
+  cookingIntensity: varchar("cooking_intensity"),
+  oilType: varchar("oil_type"),
+  milkType: varchar("milk_type"),
+  sugarType: varchar("sugar_type"),
+  category: varchar("category"),
+  ingredients: jsonb("ingredients"),
+  spiceLevel: varchar("spice_level"),
+  utensilType: varchar("utensil_type"),
+  adjustedCalories: decimal("adjusted_calories", { precision: 10, scale: 2 }),
   loggedAt: timestamp("logged_at").defaultNow(),
   date: timestamp("date").notNull(),
+});
+
+// Per-user per-meal personalized baselines (auto-learned)
+export const userMealBaselines = pgTable("user_meal_baselines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  mealName: varchar("meal_name").notNull(),
+  baselineCalories: decimal("baseline_calories", { precision: 10, scale: 2 }).notNull(),
+  sampleCount: integer("sample_count").default(0),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Mood tracking logs (linked to meals)
@@ -170,6 +191,46 @@ export const appointments = pgTable("appointments", {
   notes: text("notes"),
   feedback: text("feedback"),
   rating: integer("rating"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Nutritionist schedule slots
+export const nutritionistSchedule = pgTable("nutritionist_schedule", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  nutritionistId: varchar("nutritionist_id").references(() => nutritionists.id).notNull(),
+  date: timestamp("date").notNull(),
+  startTime: timestamp("start_time").notNull(),
+  endTime: timestamp("end_time").notNull(),
+  status: varchar("status").default("Available"), // Available, Booked, Cancelled
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Consultation notes saved by nutritionist after session
+export const consultationNotes = pgTable("consultation_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  appointmentId: varchar("appointment_id").references(() => appointments.id).notNull(),
+  nutritionistId: varchar("nutritionist_id").references(() => nutritionists.id).notNull(),
+  summary: text("summary").notNull(),
+  recommendations: text("recommendations"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Appointment feedback from user
+export const appointmentFeedback = pgTable("appointment_feedback", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  appointmentId: varchar("appointment_id").references(() => appointments.id).notNull(),
+  rating: integer("rating").notNull(),
+  reviewText: text("review_text"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Audit log for booking actions
+export const auditLogs = pgTable("audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),
+  action: varchar("action").notNull(),
+  meta: jsonb("meta"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -427,6 +488,12 @@ export type Nutritionist = typeof nutritionists.$inferSelect;
 export type FoodItem = typeof foodItems.$inferSelect;
 export type UserUtensilMapping = typeof userUtensilMapping.$inferSelect;
 export type InsertUserUtensilMapping = z.infer<typeof insertUserUtensilMappingSchema>;
+
+// New types for scheduling and consultations
+export type NutritionistSchedule = typeof nutritionistSchedule.$inferSelect;
+export type ConsultationNote = typeof consultationNotes.$inferSelect;
+export type AppointmentFeedbackType = typeof appointmentFeedback.$inferSelect;
+export type AuditLog = typeof auditLogs.$inferSelect;
 
 // Insert schema for user utensil mapping
 export const insertUserUtensilMappingSchema = createInsertSchema(userUtensilMapping).omit({

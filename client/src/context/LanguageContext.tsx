@@ -48,11 +48,10 @@ const translations = {
     'community.title': 'Community Feed',
     'community.view_all': 'View All',
     
-    // Quick Actions
-    'actions.title': 'Quick Actions',
-    'actions.scan': 'Scan Food Label',
-    'actions.appointment': 'Book Appointment',
-    'actions.reports': 'View Reports',
+  // Quick Actions
+  'actions.title': 'Quick Actions',
+  'actions.appointment': 'Book Appointment',
+  'actions.reports': 'View Reports',
     
     // Appointments
     'appointments.title': 'Upcoming Appointments',
@@ -128,11 +127,10 @@ const translations = {
     'community.title': 'समुदायिक फ़ीड',
     'community.view_all': 'सभी देखें',
     
-    // Quick Actions
-    'actions.title': 'त्वरित कार्य',
-    'actions.scan': 'खाद्य लेबल स्कैन करें',
-    'actions.appointment': 'अपॉइंटमेंट बुक करें',
-    'actions.reports': 'रिपोर्ट देखें',
+  // Quick Actions
+  'actions.title': 'त्वरित कार्य',
+  'actions.appointment': 'अपॉइंटमेंट बुक करें',
+  'actions.reports': 'रिपोर्ट देखें',
     
     // Appointments
     'appointments.title': 'आगामी अपॉइंटमेंट',

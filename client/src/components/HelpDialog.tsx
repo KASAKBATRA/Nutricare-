@@ -38,8 +38,7 @@ export function HelpDialog({ children }: HelpDialogProps) {
       color: "bg-green-500",
       features: [
         "Log meals with detailed nutrition information",
-        "Photo-based portion estimation",
-        "Nutrition facts scanner (OCR)",
+          "Photo-based portion estimation",
         "Food database search",
         "Meal history and analytics"
       ]
@@ -111,11 +110,6 @@ export function HelpDialog({ children }: HelpDialogProps) {
       title: "AI Chatbot",
       description: "Get instant nutrition advice and meal suggestions from our AI assistant",
       icon: "fas fa-robot"
-    },
-    {
-      title: "Photo Analysis",
-      description: "Take photos of food labels and get instant nutrition analysis",
-      icon: "fas fa-camera"
     },
     {
       title: "Portion Estimation",
@@ -260,7 +254,7 @@ export function HelpDialog({ children }: HelpDialogProps) {
                   <ul className="space-y-2 text-sm">
                     <li className="flex items-start gap-2">
                       <i className="fas fa-lightbulb text-yellow-500 mt-1"></i>
-                      <span>Use the photo feature to quickly log nutrition facts</span>
+                      <span>Use quick add to log nutrition facts</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <i className="fas fa-lightbulb text-yellow-500 mt-1"></i>

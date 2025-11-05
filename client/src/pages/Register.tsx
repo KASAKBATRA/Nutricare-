@@ -64,9 +64,17 @@ export default function Register() {
         throw new Error(result.message || 'Registration failed');
       }
 
+      // Persist pending email/type so user can continue verification even after navigation/back
+      try {
+        localStorage.setItem('pending_email', data.email.toLowerCase());
+        localStorage.setItem('pending_type', 'registration');
+      } catch (e) {
+        // ignore localStorage errors
+      }
+
       toast({
-        title: "Registration Successful!",
-        description: "Please check your email for the verification code.",
+        title: (result.resent ? 'Continue Verification' : 'Registration Successful!'),
+        description: result.message || "Please check your email for the verification code.",
       });
 
       // Redirect to OTP verification with email

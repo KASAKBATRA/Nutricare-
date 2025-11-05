@@ -11,6 +11,9 @@ declare module "express-session" {
   }
 }
 import { storage } from "./storage";
+import { db } from "./db";
+import { users, nutritionists } from "@shared/schema";
+import { desc, eq } from "drizzle-orm";
 import { sendMail } from "./email";
 import { generateChatResponse } from "./openai";
 import { nutritionService, addMealSchema, type AddMealData } from "./nutrition";
@@ -89,8 +92,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
         res.json({ message: `Test email sent to ${email}` });
       } catch (err: any) {
-        console.error('Debug test email failed:', err?.message || err, err);
-        res.status(500).json({ message: 'Failed to send test email', error: err?.message || String(err) });
+  console.error('Debug test email failed:', String(err), err);
+  res.status(500).json({ message: 'Failed to send test email', error: String(err) });
       }
     });
 
@@ -106,6 +109,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = registerSchema.parse(req.body);
       const result = await registerUser(validatedData);
+      // If registerUser returned a 'resent' result, that's an existing unverified user
+      if ((result as any).resent) {
+        return res.json({ message: (result as any).message || 'Please verify your email. OTP resent.', email: (result as any).email, resent: true });
+      }
+
       res.json({ 
         message: "Registration successful. Please check your email for verification code.",
         email: result.email 
@@ -356,6 +364,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Correction endpoint - user feedback to adjust estimated calories
+  app.post('/api/food-logs/:id/correction', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      const logId = req.params.id;
+      const { percentChange } = req.body; // e.g., -10 or 20
+
+      if (typeof percentChange !== 'number') return res.status(400).json({ message: 'percentChange number required' });
+
+      const logs = await storage.getFoodLogs(userId);
+      const found = logs.find(l => l.id === logId);
+      if (!found) return res.status(404).json({ message: 'Food log not found' });
+
+      const currentAdjusted = parseFloat((found as any).adjustedCalories || found.calories || '0');
+      const corrected = Math.round(currentAdjusted * (1 + percentChange / 100));
+
+      // Update the food log adjustedCalories
+      await storage.updateFoodLog(logId, userId, { adjustedCalories: corrected.toString() });
+
+      // Recompute per-user baseline for this meal
+      const sameMealLogs = logs.filter(l => l.mealName && (l.mealName as string).toLowerCase() === (found.mealName || '').toLowerCase());
+      const numericAdjusted = sameMealLogs.map(l => parseFloat((l as any).adjustedCalories || l.calories || '0'));
+      const avg = Math.round((numericAdjusted.reduce((a,b)=>a+b,0) + corrected) / (numericAdjusted.length + 1));
+      await storage.upsertUserMealBaseline(userId, found.mealName, avg, (sameMealLogs.length + 1)).catch(() => null);
+
+      res.json({ message: 'Correction applied', corrected });
+    } catch (err: any) {
+      console.error('Correction error:', err);
+      res.status(500).json({ message: 'Failed to apply correction' });
+    }
+  });
+
   app.get('/api/food-items', requireAuth, async (req, res) => {
     try {
       const search = req.query.search as string;
@@ -368,53 +408,295 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // New meal logging endpoints with nutrition calculation
+  // Multipliers used across endpoints
+  const OIL_MULTIPLIERS: Record<string, number> = {
+    "No Oil": 1.0,
+    "Refined": 1.1,
+    "Mustard": 1.15,
+    "Olive": 1.05,
+    "Desi Ghee": 1.3,
+    "Butter": 1.25,
+  };
+
+  const INTENSITY_MULTIPLIERS: Record<string, number> = {
+    "Boiled/Steamed": 0.8,
+    "Lightly Fried": 0.95,
+    "Normal": 1.0,
+    "Deep Fried": 1.25,
+    "Extra Ghee": 1.3,
+  };
+
+  const MILK_MULTIPLIERS: Record<string, number> = {
+    "None": 1.0,
+    "Cow Milk": 1.1,
+    "Buffalo Milk": 1.25,
+    "Skimmed Milk": 0.9,
+    "Plant Milk": 0.8,
+  };
+
+  // Simple keyword-based food category mapping (can be extended)
+  const FOOD_CATEGORY_MAP: Record<string, string> = {
+    milk: 'dairy',
+    tea: 'beverage',
+    coffee: 'beverage',
+    paneer: 'protein',
+    rice: 'grain',
+    chicken: 'protein',
+    poha: 'cooked',
+    roti: 'cooked',
+    curd: 'dairy',
+    fruit: 'raw',
+    dal: 'cooked',
+    sabzi: 'cooked',
+    egg: 'protein',
+  };
+
+  // Ingredient suggestions per keyword. Keys are keywords to match in food name.
+  const FOOD_INGREDIENTS_MAP: Record<string, string[]> = {
+    poha: ['Onion', 'Green Chili', 'Peanuts', 'Mustard Seeds', 'Coriander'],
+    sabzi: ['Onion', 'Garlic', 'Tomato', 'Green Chili', 'Ginger'],
+    dal: ['Onion', 'Garlic', 'Ghee', 'Tomato', 'Cumin'],
+    'chicken': ['Onion', 'Garlic', 'Ginger', 'Tomato', 'Green Chili'],
+    roti: ['Atta (Chakki Fresh)', 'Atta (Maida Mix)', 'Multi-grain'],
+    tea: ['Sugar', 'Milk'],
+    coffee: ['Sugar', 'Milk'],
+    milk: ['Full Cream', 'Toned', 'Skimmed'],
+    paneer: ['Paneer Cubes', 'Oil/Ghee', 'Spices'],
+    salad: ['Lettuce', 'Tomato', 'Onion', 'Olive Oil'],
+  };
+
+  function detectCategoryFromName(name: string) {
+    if (!name) return 'unknown';
+    const lower = name.toLowerCase();
+    for (const key of Object.keys(FOOD_CATEGORY_MAP)) {
+      if (lower.includes(key)) return FOOD_CATEGORY_MAP[key];
+    }
+    // heuristics: if contains words like curry, fry -> cooked
+    if (/(curry|fry|stew|sabzi|bhaji)/.test(lower)) return 'cooked';
+    if (/(juice|shake|smoothie)/.test(lower)) return 'beverage';
+    return 'raw';
+  }
+
+  // API endpoint to detect category and return which fields should be visible
+  app.post('/api/detect-category', requireAuth, async (req: any, res) => {
+    try {
+      const { name } = req.body || {};
+      if (!name) return res.status(400).json({ message: 'name is required' });
+      const category = detectCategoryFromName(String(name));
+
+      // Decide visible fields based on category
+      const visible: Record<string, boolean> = {
+        dairyBase: false,
+        milkType: false,
+        oilType: false,
+        cookingIntensity: false,
+        spiceLevel: false,
+        utensil: false,
+        sugarType: false,
+      };
+
+      // compute ingredient suggestions
+      const ingredientSuggestions: string[] = [];
+      const lower = String(name || '').toLowerCase();
+      for (const key of Object.keys(FOOD_INGREDIENTS_MAP)) {
+        if (lower.includes(key)) {
+          ingredientSuggestions.push(...FOOD_INGREDIENTS_MAP[key]);
+        }
+      }
+      // dedupe
+      const uniqueIngredients = Array.from(new Set(ingredientSuggestions));
+
+      if (category === 'dairy') {
+        visible.dairyBase = true;
+        visible.milkType = true;
+      } else if (category === 'beverage') {
+        visible.milkType = true;
+        visible.sugarType = true;
+      } else if (category === 'cooked') {
+        visible.oilType = true;
+        visible.cookingIntensity = true;
+        visible.spiceLevel = true;
+        visible.utensil = true;
+      } else if (category === 'protein') {
+        visible.oilType = true;
+        visible.cookingIntensity = true;
+      } else if (category === 'raw' || category === 'grain') {
+        // hide cooking options
+      }
+
+  res.json({ category, visible, ingredients: uniqueIngredients });
+    } catch (err: any) {
+      console.error('Detect category error:', err);
+      res.status(500).json({ message: 'Failed to detect category' });
+    }
+  });
+
   app.post('/api/add-meal', requireAuth, async (req: any, res) => {
     try {
       const userId = getUserId(req);
       const mealData = addMealSchema.parse(req.body);
-      
-      // Get nutrition data from Nutritionix API
-      const nutrition = await nutritionService.getNutrition(
-        mealData.mealName,
-        mealData.quantity,
-        mealData.unit
-      );
+  // Check if user has a personalized baseline for this meal
+      let baseCalories: number;
+      const baseline = await storage.getUserMealBaseline(userId, mealData.mealName).catch(() => undefined);
+
+      if (baseline && baseline.sampleCount >= 5) {
+        // Use personalized baseline when enough samples are present
+        baseCalories = parseFloat(baseline.baselineCalories || 0);
+      } else {
+        // Fetch from Nutritionix
+        const nutrition = await nutritionService.getNutrition(
+          mealData.mealName,
+          mealData.quantity,
+          mealData.unit
+        );
+        baseCalories = nutrition.calories;
+      }
+
+  // Determine multiplier using oil, intensity and milk
+  const oilKey = (mealData as any).oilType || 'No Oil';
+  const milkKey = (mealData as any).milkType || 'None';
+  const intensityKey = (mealData as any).cookingIntensity || 'Normal';
+
+  const oilMul = OIL_MULTIPLIERS[oilKey] || 1.0;
+  const milkMul = MILK_MULTIPLIERS[milkKey] || 1.0;
+  const intensityMul = INTENSITY_MULTIPLIERS[intensityKey] || 1.0;
+
+  const finalMultiplier = oilMul * milkMul * intensityMul;
+
+  const adjustedCalories = Math.round(baseCalories * finalMultiplier);
+
+      // Try to fetch nutrition info (macros) for storing food item when baseline not used
+      let nutritionForItem: any = { calories: baseCalories, protein: 0, carbs: 0, fat: 0 };
+      try {
+        const n = await nutritionService.getNutrition(mealData.mealName, mealData.quantity, mealData.unit);
+        nutritionForItem = n;
+      } catch (err) {
+        // If Nutritionix fails, continue with calorie-only baseline
+      }
 
       // Create or get food item in database
       const foodItem = await storage.createOrGetFoodItem(mealData.mealName, {
-        calories: nutrition.calories,
-        protein: nutrition.protein,
-        carbs: nutrition.carbs,
-        fats: nutrition.fat,
-        fiber: nutrition.fiber,
-        sugar: nutrition.sugar,
-        sodium: nutrition.sodium,
+        calories: nutritionForItem.calories,
+        protein: nutritionForItem.protein,
+        carbs: nutritionForItem.carbs,
+        fats: nutritionForItem.fat,
+        fiber: nutritionForItem.fiber || 0,
+        sugar: nutritionForItem.sugar || 0,
+        sodium: nutritionForItem.sodium || 0,
       });
 
-      // Create food log entry
-      const foodLog = await storage.createFoodLog({
-        userId,
-        foodItemId: foodItem.id,
-        mealName: mealData.mealName,
-        mealType: mealData.mealType,
-        quantity: mealData.quantity.toString(),
-        unit: mealData.unit,
-        calories: nutrition.calories.toString(),
-        protein: nutrition.protein.toString(),
-        carbs: nutrition.carbs.toString(),
-        fat: nutrition.fat.toString(),
-        date: new Date(),
-      });
+      // Convert utensil-based quantity to grams if user selected a utensil (apply calibration)
+      // If the mealData unit is not gram-based and a utensilType was provided, attempt conversion
+      let usedUtensilConversion = false;
+      try {
+        const utensilType = (mealData as any).utensilType;
+        if (utensilType) {
+          // Try to find user calibration or fallbacks
+          const calibration = await storage.getUtensilCalibration(userId).catch(() => []);
+          let gramsPerUnit: number | undefined;
+          if (calibration && calibration.length > 0) {
+            const found = calibration.find(c => c.utensilType === utensilType);
+            if (found) gramsPerUnit = parseFloat(found.gramsPerUnit || '0');
+          }
+
+          // default fallbacks
+          const defaults: Record<string, number> = {
+            'Small Bowl (~100ml)': 100,
+            'Medium Bowl (~150ml)': 150,
+            'Large Bowl (~250ml)': 250,
+            'Plate (~300ml)': 300,
+            'Glass (~200ml)': 200,
+          };
+
+          if (!gramsPerUnit) gramsPerUnit = defaults[utensilType as string];
+          // If we found a grams per unit and the unit provided is a utensil-like unit, convert
+          if (gramsPerUnit && mealData.unit && ['pieces'].includes(mealData.unit) || mealData.unit === 'grams' || mealData.unit === 'ml') {
+            // If unit is 'pieces' interpret as count of utensilType
+            if (mealData.unit === 'pieces') {
+              // convert count * gramsPerUnit
+              const grams = Number(mealData.quantity) * gramsPerUnit;
+              // Replace baseCalories by refetching nutrition per grams
+              try {
+                const n = await nutritionService.getNutrition(mealData.mealName, grams, 'grams');
+                baseCalories = n.calories;
+              } catch (err) {
+                // ignore, keep existing baseCalories
+              }
+              usedUtensilConversion = true;
+            }
+          }
+        }
+      } catch (err) {
+        // ignore utensil conversion failures
+      }
+
+      // Create food log entry (store base calories and adjusted)
+      let foodLog: any;
+      try {
+        foodLog = await storage.createFoodLog({
+          userId,
+          foodItemId: foodItem.id,
+          mealName: mealData.mealName,
+          mealType: mealData.mealType,
+          quantity: mealData.quantity.toString(),
+          unit: mealData.unit,
+          calories: baseCalories.toString(),
+          protein: (nutritionForItem.protein || 0).toString(),
+          carbs: (nutritionForItem.carbs || 0).toString(),
+          fat: (nutritionForItem.fat || 0).toString(),
+          cookingIntensity: mealData.cookingIntensity || 'Normal',
+          oilType: (mealData as any).oilType || null,
+          milkType: (mealData as any).milkType || null,
+          sugarType: (mealData as any).sugarType || null,
+          ingredients: (mealData as any).ingredients ? JSON.stringify((mealData as any).ingredients) : null,
+          spiceLevel: (mealData as any).spiceLevel || null,
+          utensilType: (mealData as any).utensilType || null,
+          category: (mealData as any).category || null,
+          adjustedCalories: adjustedCalories.toString(),
+          date: new Date(),
+        });
+      } catch (err: any) {
+        // Fallback for databases that don't have the new columns yet (e.g., oil_type)
+        const errStr = String(err || '');
+        if (errStr.includes('does not exist') || err.code === '42703') {
+          console.warn('Database missing cooking detail columns, retrying insert without advanced fields');
+          // Retry without advanced fields so meal can still be logged
+          foodLog = await storage.createFoodLog({
+            userId,
+            foodItemId: foodItem.id,
+            mealName: mealData.mealName,
+            mealType: mealData.mealType,
+            quantity: mealData.quantity.toString(),
+            unit: mealData.unit,
+            calories: baseCalories.toString(),
+            protein: (nutritionForItem.protein || 0).toString(),
+            carbs: (nutritionForItem.carbs || 0).toString(),
+            fat: (nutritionForItem.fat || 0).toString(),
+            cookingIntensity: mealData.cookingIntensity || 'Normal',
+            // Advanced fields omitted in fallback insert to support older DBs
+            adjustedCalories: adjustedCalories.toString(),
+            date: new Date(),
+          });
+        } else {
+          throw err;
+        }
+      }
+
+      // Auto-learn: compute average adjusted calories for same meal for this user
+      const logs = await storage.getFoodLogs(userId);
+      const sameMealLogs = logs.filter(l => l.mealName && (l.mealName as string).toLowerCase() === mealData.mealName.toLowerCase());
+      if (sameMealLogs.length >= 5) {
+        const numericAdjusted = sameMealLogs.map(l => parseFloat((l as any).adjustedCalories || l.calories || 0));
+        const avg = Math.round(numericAdjusted.reduce((a,b)=>a+b,0) / numericAdjusted.length);
+        await storage.upsertUserMealBaseline(userId, mealData.mealName, avg, sameMealLogs.length).catch(() => null);
+      }
 
       res.json({
         message: "Meal logged successfully",
         meal: foodLog,
-        nutrition: {
-          calories: nutrition.calories,
-          protein: nutrition.protein,
-          carbs: nutrition.carbs,
-          fat: nutrition.fat,
-        },
+        base_calories: baseCalories,
+        adjusted_calories: adjustedCalories,
+        used_utensil_conversion: usedUtensilConversion || false,
       });
     } catch (error: any) {
       console.error("Error adding meal:", error);
@@ -422,6 +704,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: error.message || "Failed to add meal",
         errors: error.errors || []
       });
+    }
+  });
+
+  // Estimate calories endpoint (for frontend dynamic estimate)
+  app.get('/api/estimate-calories', requireAuth, async (req, res) => {
+    try {
+      const { q, quantity, unit, intensity, oil_type, milk_type, spice_level, utensil_type } = req.query as any;
+      if (!q || !quantity || !unit) return res.status(400).json({ message: 'q, quantity and unit are required' });
+
+      // If utensil_type is provided and unit is 'pieces', attempt to convert quantity to grams using user calibration if available
+      let usedBaseline = false;
+      let nutr: any;
+      try {
+        let qty = parseFloat(quantity);
+        let useUnit = unit;
+        if (utensil_type && unit === 'pieces') {
+          // try to get user calibration (we don't have userId here? we do via session)
+          const userId = getUserId(req);
+          let gramsPerUnit: number | undefined;
+          try {
+            const calibration = await storage.getUtensilCalibration(userId).catch(() => []);
+            const found = calibration.find((c: any) => c.utensilType === utensil_type);
+            if (found) gramsPerUnit = parseFloat(found.gramsPerUnit || '0');
+          } catch (err) {
+            // ignore
+          }
+          const defaults: Record<string, number> = {
+            'Small Bowl (~100ml)': 100,
+            'Medium Bowl (~150ml)': 150,
+            'Large Bowl (~250ml)': 250,
+            'Plate (~300ml)': 300,
+            'Glass (~200ml)': 200,
+          };
+          if (!gramsPerUnit) gramsPerUnit = defaults[utensil_type as string];
+          if (gramsPerUnit) {
+            qty = qty * gramsPerUnit;
+            useUnit = 'grams';
+          }
+        }
+
+        nutr = await nutritionService.getNutrition(q, qty, useUnit);
+      } catch (err) {
+        // If Nutritionix fails, try to use baseline
+        const baseline = await storage.getUserMealBaseline(getUserId(req), (q || '').toString()).catch(() => undefined);
+        if (baseline && baseline.baselineCalories) {
+          usedBaseline = true;
+          const baseCalories = parseFloat(baseline.baselineCalories || '0');
+          nutr = { calories: baseCalories, protein: 0, carbs: 0, fat: 0 };
+        } else {
+          throw err;
+        }
+      }
+
+      // Apply multipliers
+      const oilMul = (oil_type && OIL_MULTIPLIERS && (OIL_MULTIPLIERS as any)[oil_type]) || 1.0;
+      const milkMul = (milk_type && MILK_MULTIPLIERS && (MILK_MULTIPLIERS as any)[milk_type]) || 1.0;
+      const intensityMul = (intensity && INTENSITY_MULTIPLIERS && (INTENSITY_MULTIPLIERS as any)[intensity]) || 1.0;
+      const adjusted = Math.round(nutr.calories * oilMul * milkMul * intensityMul);
+      // Return expanded nutrition info so frontend can classify healthiness more reliably
+      res.json({
+        base_calories: nutr.calories,
+        adjusted_calories: adjusted,
+        used_baseline: usedBaseline,
+        protein: nutr.protein || 0,
+        carbs: nutr.carbs || 0,
+        fat: nutr.fat || 0,
+        fiber: nutr.fiber || 0,
+        sugar: nutr.sugar || 0,
+        sodium: nutr.sodium || 0,
+      });
+    } catch (err: any) {
+      console.error('Estimate calories error:', err);
+      res.status(500).json({ message: 'Failed to estimate calories' });
     }
   });
 
@@ -562,7 +917,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(appointments);
     } catch (error) {
       console.error("Error fetching appointments:", error);
-      res.status(500).json({ message: "Failed to fetch appointments" });
+      console.error("Error creating appointment:", error);
+      const msg = (error && (error as any).message) ? (error as any).message : 'Failed to create appointment';
+      res.status(500).json({ message: msg });
     }
   });
 
@@ -624,6 +981,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+    // Nutritionist: get appointments assigned to them (default: pending)
+    app.get('/api/nutritionist/appointments', requireAuth, async (req: any, res) => {
+      try {
+        const userId = getUserId(req);
+        // Find nutritionist profile for this user
+        const nutritionistsList = await storage.getNutritionists();
+        const nutritionist = (nutritionistsList || []).find((n: any) => String(n.userId) === String(userId));
+        if (!nutritionist) return res.status(403).json({ message: 'Not a nutritionist' });
+
+        const appointments = await storage.getNutritionistAppointments(nutritionist.id);
+        // By default, return pending first
+        const pendingFirst = (appointments || []).sort((a: any, b: any) => {
+          const order = { pending: 0, confirmed: 1, completed: 2, cancelled: 3 } as any;
+          return (order[a.status] || 9) - (order[b.status] || 9) || new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+        });
+        res.json(pendingFirst);
+      } catch (error) {
+        console.error('Error fetching nutritionist appointments:', error);
+        res.status(500).json({ message: 'Failed to fetch appointments' });
+      }
+    });
+
+    // Nutritionist decision endpoint: accept or reject an appointment
+    app.post('/api/nutritionist/appointments/:id/decision', requireAuth, async (req: any, res) => {
+      try {
+        const userId = getUserId(req);
+        const appointmentId = req.params.id;
+        const { action } = req.body || {}; // expected 'accept' or 'reject'
+
+        if (!action || !['accept', 'reject', 'cancel'].includes(action)) {
+          return res.status(400).json({ message: 'Invalid action' });
+        }
+
+        // Find nutritionist profile for this user
+        const nutritionistsList = await storage.getNutritionists();
+        const nutritionist = (nutritionistsList || []).find((n: any) => String(n.userId) === String(userId));
+        if (!nutritionist) return res.status(403).json({ message: 'Not a nutritionist' });
+
+        // Fetch the appointment and ensure it belongs to this nutritionist
+        const appts = await storage.getNutritionistAppointments(nutritionist.id);
+        const appointment = (appts || []).find((a: any) => String(a.id) === String(appointmentId));
+        if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
+
+        let newStatus = 'pending';
+        if (action === 'accept') newStatus = 'confirmed';
+        if (action === 'reject' || action === 'cancel') newStatus = 'cancelled';
+
+        await storage.updateAppointmentStatus(appointmentId, newStatus);
+
+        // Notify the user
+        try {
+          await storage.createNotification({
+            userId: appointment.userId,
+            type: 'appointment',
+            title: `Appointment ${newStatus}`,
+            message: `Your appointment scheduled on ${new Date(appointment.scheduledAt).toLocaleString()} has been ${newStatus}.`,
+            data: { appointmentId },
+          });
+        } catch (nerr) {
+          console.warn('Failed to create notification for appointment decision:', nerr);
+        }
+
+        // Send email to the user informing about the decision
+        try {
+          const user = await storage.getUser(appointment.userId);
+          if (user && user.email) {
+            await sendMail({
+              to: user.email,
+              subject: `Your appointment has been ${newStatus}`,
+              text: `Hello ${user.firstName || ''},\n\nYour appointment scheduled on ${new Date(appointment.scheduledAt).toLocaleString()} has been ${newStatus} by the nutritionist.\n\nRegards,\nNutriCare++`,
+            });
+          }
+        } catch (e) {
+          console.warn('Failed to send email for appointment decision:', e);
+        }
+
+        res.json({ message: 'OK', status: newStatus });
+      } catch (error) {
+        console.error('Error processing nutritionist decision:', error);
+        res.status(500).json({ message: 'Failed to process decision' });
+      }
+    });
+
   app.get('/api/nutritionists', requireAuth, async (req, res) => {
     try {
       const nutritionists = await storage.getNutritionists();
@@ -631,6 +1071,230 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching nutritionists:", error);
       res.status(500).json({ message: "Failed to fetch nutritionists" });
+    }
+  });
+
+  // User: reschedule an appointment (request change) -> sets status to 'pending' and notifies nutritionist
+  app.post('/api/appointments/:id/reschedule', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      const appointmentId = req.params.id;
+      const { scheduledAt } = req.body || {};
+      if (!scheduledAt) return res.status(400).json({ message: 'scheduledAt is required' });
+
+      const appt = await storage.getAppointmentById(appointmentId);
+      if (!appt) return res.status(404).json({ message: 'Appointment not found' });
+
+  // Allow reschedule by the user who booked OR by the assigned nutritionist user
+  // Fetch the nutritionist record directly by id (don't rely on availability filter)
+  const [nutritionist] = await db.select().from(nutritionists).where(eq(nutritionists.id, appt.nutritionistId)).limit(1);
+  const actorIsNutritionist = nutritionist && String(nutritionist.userId) === String(userId);
+      const actorIsOwner = String(appt.userId) === String(userId);
+      // Debug logging to help trace unexpected 403s
+      console.log('RESCHEDULE DEBUG:', {
+        sessionUserId: userId,
+        apptId: appointmentId,
+        apptUserId: String(appt.userId),
+        apptNutritionistId: String(appt.nutritionistId),
+        nutritionistRecordUserId: nutritionist ? String(nutritionist.userId) : null,
+        actorIsOwner,
+        actorIsNutritionist,
+      });
+      if (!actorIsOwner && !actorIsNutritionist) return res.status(403).json({ message: 'Not allowed' });
+
+      // Coerce scheduledAt
+      const newDate = new Date(scheduledAt);
+      if (isNaN(newDate.getTime())) return res.status(400).json({ message: 'Invalid date' });
+
+      // Business rule: proposed time must be at least 12 hours from now
+      const now = new Date();
+      const minMs = 1000 * 60 * 60 * 12; // 12 hours
+      if (newDate.getTime() - now.getTime() < minMs) {
+        return res.status(400).json({ message: 'Proposed time must be at least 12 hours from now' });
+      }
+
+      // Business rule: proposed time must fall within one of the nutritionist's Available schedule slots
+      try {
+        const schedule = await storage.getNutritionistSchedule(String(appt.nutritionistId));
+        const matches = (schedule || []).some((slot: any) => {
+          try {
+            if (!slot || slot.status !== 'Available') return false;
+            const slotStart = new Date(slot.startTime);
+            const slotEnd = new Date(slot.endTime);
+            return newDate.getTime() >= slotStart.getTime() && newDate.getTime() <= slotEnd.getTime();
+          } catch (e) { return false; }
+        });
+        if (!matches) {
+          return res.status(400).json({ message: 'Proposed time is outside the nutritionist\'s available working hours' });
+        }
+      } catch (e) {
+        console.warn('Failed to validate nutritionist schedule for reschedule:', e);
+      }
+
+      // Notify the opposite party depending on who initiated the change
+      try {
+        if (actorIsOwner && nutritionist) {
+          // user initiated -> notify nutritionist
+          await storage.createNotification({
+            userId: nutritionist.userId,
+            type: 'appointment',
+            title: 'Reschedule Request',
+            message: `User requested to reschedule appointment ${appointmentId} to ${newDate.toLocaleString()}`,
+            data: { appointmentId },
+          });
+
+          const nutrUser = await storage.getUser(nutritionist.userId);
+          if (nutrUser && nutrUser.email) {
+            await sendMail({
+              to: nutrUser.email,
+              subject: 'Reschedule request for appointment',
+              text: `User has requested to reschedule appointment on ${newDate.toLocaleString()}. Please review and accept or reject the request.`,
+            }).catch(()=>{});
+          }
+        } else if (actorIsNutritionist) {
+          // nutritionist initiated -> create a proposal (don't immediately update appointment). User must accept/reject.
+          const proposedAtIso = newDate.toISOString();
+
+          await storage.createNotification({
+            userId: appt.userId,
+            type: 'appointment',
+            title: 'Proposed new appointment time',
+            message: `The nutritionist has proposed to move your appointment ${appointmentId} to ${newDate.toLocaleString()}. Please accept or reject the proposal from your Appointments page.`,
+            data: { appointmentId, proposedAt: proposedAtIso, proposedByNutritionist: true },
+          });
+
+          const user = await storage.getUser(appt.userId);
+          if (user && user.email) {
+            const subject = `Proposed new time for your appointment — ${newDate.toLocaleString()}`;
+            const html = `
+              <div style="font-family: Arial, sans-serif; max-width:600px; margin:0 auto; padding:20px;">
+                <div style="text-align:center; margin-bottom:20px;">
+                  <div style="background:linear-gradient(135deg,#10B981,#34D399); width:72px; height:72px; border-radius:50%; margin:0 auto 12px; display:flex; align-items:center; justify-content:center;">
+                    <span style="color:white; font-size:30px;">🌿</span>
+                  </div>
+                  <h2 style="color:#065f46; margin:0;">New appointment time proposed</h2>
+                </div>
+                <div style="background:#f8fffe; border:1px solid #d1fae5; border-radius:12px; padding:18px;">
+                  <p style="color:#374151; line-height:1.6;">Hi ${user.firstName || 'there'},</p>
+                  <p style="color:#374151; line-height:1.6;">Your nutritionist has proposed to move your appointment to <strong>${newDate.toLocaleString()}</strong>. Please open your Appointments page to accept or reject this proposal.</p>
+                  <p style="color:#374151; line-height:1.6;">If you accept, we will notify the nutritionist and confirm the appointment.</p>
+                </div>
+                <div style="text-align:center; margin-top:18px; color:#9ca3af; font-size:12px;">© ${new Date().getFullYear()} NutriCare++. Healthy eating, happier you.</div>
+              </div>
+            `;
+            sendMail({ to: user.email, subject, html }).catch((e) => {
+              console.warn('Failed to send nutritionist proposal email to user:', e);
+            });
+          }
+        }
+      } catch (nerr) {
+        console.warn('Failed to create notifications about reschedule:', nerr);
+      }
+
+      res.json({ message: 'Reschedule requested' });
+    } catch (error) {
+      console.error('Error rescheduling appointment:', error);
+      res.status(500).json({ message: 'Failed to reschedule' });
+    }
+  });
+
+  // User responds to a nutritionist-initiated reschedule proposal
+  app.post('/api/appointments/:id/respond-reschedule', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      const appointmentId = req.params.id;
+      const { action, proposedAt } = req.body || {}; // action: 'accept' | 'reject'
+      if (!action || !['accept', 'reject'].includes(action)) return res.status(400).json({ message: 'Invalid action' });
+      if (!proposedAt) return res.status(400).json({ message: 'proposedAt is required' });
+
+      const appt = await storage.getAppointmentById(appointmentId);
+      if (!appt) return res.status(404).json({ message: 'Appointment not found' });
+      if (String(appt.userId) !== String(userId)) return res.status(403).json({ message: 'Not allowed' });
+
+      const newDate = new Date(proposedAt);
+      if (isNaN(newDate.getTime())) return res.status(400).json({ message: 'Invalid date' });
+
+      // Business rule: proposed time must be at least 12 hours from now
+      const now = new Date();
+      const minMs = 1000 * 60 * 60 * 12; // 12 hours
+      if (newDate.getTime() - now.getTime() < minMs) {
+        return res.status(400).json({ message: 'Proposed time must be at least 12 hours from now' });
+      }
+
+      // Ensure proposedAt is within nutritionist schedule
+      try {
+        const schedule = await storage.getNutritionistSchedule(String(appt.nutritionistId));
+        const matches = (schedule || []).some((slot: any) => {
+          try {
+            if (!slot || slot.status !== 'Available') return false;
+            const slotStart = new Date(slot.startTime);
+            const slotEnd = new Date(slot.endTime);
+            return newDate.getTime() >= slotStart.getTime() && newDate.getTime() <= slotEnd.getTime();
+          } catch (e) { return false; }
+        });
+        if (!matches) {
+          return res.status(400).json({ message: 'Proposed time is outside the nutritionist\'s available working hours' });
+        }
+      } catch (e) {
+        console.warn('Failed to validate nutritionist schedule for response to proposal:', e);
+      }
+
+      // Handle accept/reject
+      if (action === 'accept') {
+        await storage.updateAppointmentSchedule(appointmentId, newDate);
+        // Mark appointment as confirmed
+        await storage.updateAppointmentStatus(appointmentId, 'confirmed');
+
+        // Notify nutritionist and email
+        try {
+          const nutritionistsList = await storage.getNutritionists();
+          const nutritionist = (nutritionistsList || []).find((n: any) => String(n.id) === String(appt.nutritionistId));
+          if (nutritionist) {
+            await storage.createNotification({
+              userId: nutritionist.userId,
+              type: 'appointment',
+              title: 'Reschedule accepted',
+              message: `User accepted the proposed time for appointment ${appointmentId}: ${newDate.toLocaleString()}`,
+              data: { appointmentId, proposedAt: newDate.toISOString() },
+            });
+
+            const nutrUser = await storage.getUser(nutritionist.userId);
+            if (nutrUser && nutrUser.email) {
+              await sendMail({
+                to: nutrUser.email,
+                subject: `Reschedule accepted by user — ${newDate.toLocaleString()}`,
+                text: `The user has accepted the proposed reschedule for appointment ${appointmentId} to ${newDate.toLocaleString()}.`,
+              }).catch(()=>{});
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to notify nutritionist about accepted reschedule:', e);
+        }
+
+        return res.json({ message: 'Reschedule accepted and confirmed' });
+      }
+
+      // reject
+      try {
+        const nutritionistsList = await storage.getNutritionists();
+        const nutritionist = (nutritionistsList || []).find((n: any) => String(n.id) === String(appt.nutritionistId));
+        if (nutritionist) {
+          await storage.createNotification({
+            userId: nutritionist.userId,
+            type: 'appointment',
+            title: 'Reschedule rejected',
+            message: `User rejected the proposed time for appointment ${appointmentId}.`,
+            data: { appointmentId },
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to notify nutritionist about rejected reschedule:', e);
+      }
+
+      res.json({ message: 'Reschedule proposal rejected' });
+    } catch (error) {
+      console.error('Error responding to reschedule proposal:', error);
+      res.status(500).json({ message: 'Failed to respond to reschedule' });
     }
   });
 
@@ -678,6 +1342,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching friends:", error);
       res.status(500).json({ message: "Failed to fetch friends" });
+    }
+  });
+
+  // Send friend request by email
+  app.post('/api/friends/request', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      const { email } = req.body || {};
+      if (!email) return res.status(400).json({ message: 'email is required' });
+      const target = await storage.getUserByEmail(String(email).trim().toLowerCase());
+      if (!target) return res.status(404).json({ message: 'User not found' });
+      if (target.id === userId) return res.status(400).json({ message: "Cannot add yourself" });
+
+      await storage.sendFriendRequest(userId, target.id);
+      res.json({ message: 'Friend request sent' });
+    } catch (err: any) {
+      console.error('Error sending friend request:', err);
+      res.status(500).json({ message: 'Failed to send friend request' });
+    }
+  });
+
+  // Accept a friend request (followerId is the id of the requester)
+  app.post('/api/friends/accept', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      const { followerId } = req.body || {};
+      if (!followerId) return res.status(400).json({ message: 'followerId is required' });
+
+      await storage.acceptFriendRequest(String(followerId), userId);
+      res.json({ message: 'Friend request accepted' });
+    } catch (err: any) {
+      console.error('Error accepting friend request:', err);
+      res.status(500).json({ message: 'Failed to accept friend request' });
+    }
+  });
+
+  // Remove friendship (either direction)
+  app.delete('/api/friends', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      const { userId: otherId } = req.body || {};
+      if (!otherId) return res.status(400).json({ message: 'userId is required in body' });
+
+      await storage.removeFriendship(userId, String(otherId));
+      res.json({ message: 'Friend removed' });
+    } catch (err: any) {
+      console.error('Error removing friendship:', err);
+      res.status(500).json({ message: 'Failed to remove friendship' });
+    }
+  });
+
+  // Discover candidates
+  app.get('/api/friends/discover', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      const candidates = await storage.getDiscoverCandidates(userId);
+      res.json(candidates);
+    } catch (err: any) {
+      console.error('Error fetching discover candidates:', err);
+      res.status(500).json({ message: 'Failed to fetch candidates' });
+    }
+  });
+
+  // Debug endpoint to inspect raw discover candidates (for development)
+  app.get('/api/friends/discover-debug', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      // For debugging, return the raw users table rows (recent) and the candidate list
+      const recentUsers = await db.select().from(users).orderBy(desc(users.createdAt)).limit(100);
+      const candidates = await storage.getDiscoverCandidates(userId);
+      res.json({ recentCount: recentUsers.length, recentUsers: recentUsers.slice(0, 20), candidatesCount: candidates.length, candidates: candidates.slice(0, 50) });
+    } catch (err: any) {
+      console.error('Discover debug error:', err);
+      res.status(500).json({ message: 'Discover debug failed' });
     }
   });
 
@@ -770,13 +1508,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }));
 
       // Generate AI response
-      const aiResponse = await generateChatResponse(chatHistory, language);
-      
+      let assistantContent = '';
+
+      // Prefer Python NLP chatbot service if available (no OpenAI required)
+      const pythonChatUrl = process.env.PYTHON_CHATBOT_URL || 'http://localhost:9000';
+      try {
+        const resp = await fetch(`${pythonChatUrl}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: req.session?.userId || null, message: content, lang: language }),
+        });
+        if (resp.ok) {
+          const json = await resp.json();
+          assistantContent = json.reply || json.message || '';
+        } else {
+          console.warn('Python chatbot returned non-OK:', resp.status);
+        }
+      } catch (err) {
+  console.warn('Python chatbot not reachable, falling back to OpenAI backend:', String(err));
+      }
+
+      // Fallback to OpenAI-based generator if python service didn't provide an answer
+      if (!assistantContent) {
+        const aiResponse = await generateChatResponse(chatHistory, language);
+        assistantContent = aiResponse.message;
+      }
+
       // Save AI response
       const assistantMessage = await storage.createChatMessage({
         conversationId,
         role: "assistant",
-        content: aiResponse.message,
+        content: assistantContent,
       });
 
       res.json({

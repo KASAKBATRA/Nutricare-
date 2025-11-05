@@ -43,7 +43,8 @@ export const addMealSchema = z.object({
   mealName: z.string().min(1, "Meal name is required"),
   quantity: z.number().positive("Quantity must be positive"),
   unit: z.enum(["grams", "ml", "cups", "pieces", "oz", "tbsp", "tsp"]),
-  mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional().default("snack"),
+  mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
+  cookingIntensity: z.enum(["Less Oil", "Normal", "More Oil", "Extra Ghee"]).optional().default("Normal"),
 });
 
 export type AddMealData = z.infer<typeof addMealSchema>;
@@ -117,7 +118,24 @@ class NutritionService {
       });
 
       if (!response.ok) {
-        throw new Error(`Nutritionix API error: ${response.status} ${response.statusText}`);
+        // capture body for debugging
+        let bodyText = '';
+        try {
+          bodyText = await response.text();
+        } catch (e) {
+          bodyText = '<failed to read body>';
+        }
+        console.error(`Nutritionix API returned ${response.status} ${response.statusText}: ${bodyText}`);
+        // Graceful fallback: return zeros instead of throwing so callers can continue
+        return {
+          calories: 0,
+          protein: 0,
+          carbs: 0,
+          fat: 0,
+          fiber: 0,
+          sugar: 0,
+          sodium: 0,
+        } as NutritionData;
       }
 
       const data = await response.json();

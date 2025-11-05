@@ -13,19 +13,26 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function Friends() {
   const { user, isAuthenticated } = useAuth();
+  const userAny = user as any;
   const { t } = useLanguage();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [searchEmail, setSearchEmail] = useState('');
 
-  const { data: friends, isLoading: friendsLoading } = useQuery({
+  const { data: friends, isLoading: friendsLoading } = useQuery<any[]>({
     queryKey: ['/api/friends'],
     enabled: isAuthenticated,
     retry: false,
   });
 
-  const { data: friendActivity, isLoading: activityLoading } = useQuery({
+  const { data: friendActivity, isLoading: activityLoading } = useQuery<any[]>({
     queryKey: ['/api/friends/activity'],
+    enabled: isAuthenticated,
+    retry: false,
+  });
+
+  const { data: discover, isLoading: discoverLoading } = useQuery<any[]>({
+    queryKey: ['/api/friends/discover'],
     enabled: isAuthenticated,
     retry: false,
   });
@@ -63,6 +70,17 @@ export default function Friends() {
     },
   });
 
+  const removeFriendMutation = useMutation({
+    mutationFn: async (otherId: string) => {
+      const response = await apiRequest('DELETE', '/api/friends', { userId: otherId });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/friends'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/friends/discover'] });
+    },
+  });
+
   const handleSendFriendRequest = () => {
     if (!searchEmail.trim()) {
       toast({
@@ -73,7 +91,7 @@ export default function Friends() {
       return;
     }
 
-    if (searchEmail === user?.email) {
+  if (searchEmail === userAny?.email) {
       toast({
         title: "Error",
         description: "You cannot add yourself as a friend.",
@@ -268,45 +286,46 @@ export default function Friends() {
                     />
                     <Button 
                       onClick={handleSendFriendRequest}
-                      disabled={sendFriendRequestMutation.isPending}
+                      disabled={sendFriendRequestMutation.status === 'pending'}
                       className="bg-nutricare-green hover:bg-nutricare-dark"
                     >
-                      {sendFriendRequestMutation.isPending ? 'Sending...' : 'Send Request'}
+                      {sendFriendRequestMutation.status === 'pending' ? 'Sending...' : 'Send Request'}
                     </Button>
                   </div>
                 </div>
 
-                {/* Suggested Friends */}
+                {/* Suggested Friends (Discover) */}
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Suggested for You</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {/* Mock suggested users - in real app this would come from API */}
-                    {Array.from({ length: 6 }, (_, i) => (
-                      <div key={i} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                        <div className="flex items-center space-x-3 mb-3">
-                          <div className={`w-12 h-12 bg-gradient-to-r ${
-                            i % 3 === 0 ? 'from-pink-400 to-purple-400' :
-                            i % 3 === 1 ? 'from-blue-400 to-cyan-400' :
-                            'from-green-400 to-teal-400'
-                          } rounded-full flex items-center justify-center text-white font-semibold`}>
-                            U{i + 1}
+                    {discoverLoading ? (
+                      <div>Loading...</div>
+                    ) : discover && discover.length > 0 ? (
+                      discover.map((cand: any) => (
+                        <div key={cand.id} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                          <div className="flex items-center space-x-3 mb-3">
+                            <div className={`w-12 h-12 bg-gradient-to-r from-green-400 to-teal-400 rounded-full flex items-center justify-center text-white font-semibold`}>
+                              {cand.firstName?.[0] || 'U'}
+                            </div>
+                            <div>
+                              <h4 className="font-semibold text-gray-900 dark:text-white">{cand.firstName} {cand.lastName}</h4>
+                              <p className="text-sm text-gray-600 dark:text-gray-400">{cand.mutualCount || 0} mutuals</p>
+                            </div>
                           </div>
-                          <div>
-                            <h4 className="font-semibold text-gray-900 dark:text-white">Health Enthusiast {i + 1}</h4>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">Joined recently</p>
+                          <div className="flex space-x-2">
+                            <Button variant="outline" size="sm" className="flex-1" onClick={() => sendFriendRequestMutation.mutate(cand.email)}>
+                              <i className="fas fa-user-plus mr-1"></i>
+                              Add Friend
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => removeFriendMutation.mutate(cand.id)}>
+                              <i className="fas fa-times text-gray-400"></i>
+                            </Button>
                           </div>
                         </div>
-                        <div className="flex space-x-2">
-                          <Button variant="outline" size="sm" className="flex-1">
-                            <i className="fas fa-user-plus mr-1"></i>
-                            Add Friend
-                          </Button>
-                          <Button variant="ghost" size="sm">
-                            <i className="fas fa-times text-gray-400"></i>
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
+                      ))
+                    ) : (
+                      <div className="text-sm text-gray-500">No suggestions right now.</div>
+                    )}
                   </div>
                 </div>
 

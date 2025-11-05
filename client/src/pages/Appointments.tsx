@@ -10,11 +10,12 @@ import { isUnauthorizedError } from '@/lib/authUtils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function Appointments() {
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth() as any;
   const { t } = useLanguage();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -75,6 +76,41 @@ export default function Appointments() {
       });
     },
   });
+
+  // Nutritionist-specific data
+  const { data: nutritionistAppointmentsRaw, isLoading: nutrLoading } = useQuery({
+    queryKey: ['/api/nutritionist/appointments'],
+    enabled: isAuthenticated,
+    retry: false,
+  });
+  const nutritionistAppointments = Array.isArray(nutritionistAppointmentsRaw) ? nutritionistAppointmentsRaw : [];
+
+  const decisionMutation = useMutation({
+    mutationFn: async ({ id, action }: any) => {
+      const res = await apiRequest('POST', `/api/nutritionist/appointments/${id}/decision`, { action });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/nutritionist/appointments'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/appointments'] });
+    },
+  });
+
+  const rescheduleMutation = useMutation({
+    mutationFn: async ({ id, scheduledAt }: any) => {
+      const res = await apiRequest('POST', `/api/appointments/${id}/reschedule`, { scheduledAt });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/appointments'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/nutritionist/appointments'] });
+    },
+  });
+
+  // Dialog state for nicer "Schedule Again" UX
+  const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false);
+  const [rescheduleAppointment, setRescheduleAppointment] = useState<any>(null);
+  const [rescheduleDate, setRescheduleDate] = useState<string>('');
 
   const handleBookAppointment = () => {
     if (!selectedNutritionist || !appointmentData.scheduledAt) {
@@ -150,7 +186,7 @@ export default function Appointments() {
           }}
         />
 
-        {/* Booking Form */}
+  {/* Booking Form */}
         {showBookingForm && selectedNutritionist && (
           <Card className="mb-8 glass shadow-lg border-none">
             <CardHeader>
@@ -192,6 +228,61 @@ export default function Appointments() {
                 <Button variant="outline" onClick={() => setShowBookingForm(false)}>
                   Cancel
                 </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Nutritionist dashboard: pending requests */}
+        {isAuthenticated && nutritionistAppointments.length > 0 && user && (
+          <Card className="mb-8 glass shadow-lg border-none">
+            <CardHeader>
+              <CardTitle>Incoming Appointment Requests</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {nutritionistAppointments.map((appt: any) => {
+                  const apptDate = new Date(appt.scheduledAt);
+                  const isPast = apptDate.getTime() < Date.now();
+                  const isConfirmed = appt.status === 'confirmed' || appt.status === 'accepted';
+
+                  return (
+                    <div key={appt.id} className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                      <div>
+                        <p className="font-semibold">Requested by: {appt.userId}</p>
+                        <p className="text-sm text-gray-500">When: {apptDate.toLocaleString()}</p>
+                        {appt.notes && <p className="text-xs text-gray-500">Notes: {appt.notes}</p>}
+                      </div>
+                      <div className="flex space-x-2 items-center">
+                        {isPast && !isConfirmed ? (
+                          // show Missed label and Schedule Again button
+                          <>
+                            <span className="px-3 py-1 rounded-full text-xs font-medium text-red-600 bg-red-100 dark:bg-red-900/20">Missed</span>
+                            <Button size="sm" onClick={() => {
+                              // Open dialog with prefilled date (local datetime-local value)
+                              setRescheduleAppointment(appt);
+                              try {
+                                const local = new Date(appt.scheduledAt);
+                                // format as YYYY-MM-DDTHH:MM for datetime-local
+                                const v = local.toISOString().slice(0,16);
+                                setRescheduleDate(v);
+                              } catch (e) {
+                                setRescheduleDate(new Date().toISOString().slice(0,16));
+                              }
+                              setRescheduleDialogOpen(true);
+                            }} className="bg-yellow-500">Schedule Again</Button>
+                          </>
+                        ) : (
+                          // normal accept/reject
+                          <>
+                            <Button size="sm" onClick={() => decisionMutation.mutate({ id: appt.id, action: 'accept' })} className="bg-green-500">Accept</Button>
+                            <Button size="sm" variant="destructive" onClick={() => decisionMutation.mutate({ id: appt.id, action: 'reject' })}>Reject</Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
@@ -305,6 +396,56 @@ export default function Appointments() {
             )}
           </CardContent>
         </Card>
+        {/* Reschedule dialog */}
+        <Dialog open={rescheduleDialogOpen} onOpenChange={(open) => setRescheduleDialogOpen(open)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Schedule a new time</DialogTitle>
+            </DialogHeader>
+
+            <div className="mt-2">
+              <label className="block text-sm font-medium mb-2">New Date & Time</label>
+              <Input
+                type="datetime-local"
+                value={rescheduleDate}
+                onChange={(e) => setRescheduleDate(e.target.value)}
+                min={new Date().toISOString().slice(0,16)}
+              />
+            </div>
+
+            <DialogFooter className="mt-4">
+              <div className="flex gap-2 w-full justify-end">
+                <Button variant="outline" onClick={() => setRescheduleDialogOpen(false)}>Cancel</Button>
+                <Button
+                  onClick={async () => {
+                    if (!rescheduleAppointment || !rescheduleDate) {
+                      toast({ title: 'Error', description: 'Please choose a valid date', variant: 'destructive' });
+                      return;
+                    }
+                    try {
+                      const iso = new Date(rescheduleDate);
+                      if (isNaN(iso.getTime())) {
+                        toast({ title: 'Error', description: 'Invalid date', variant: 'destructive' });
+                        return;
+                      }
+                      await rescheduleMutation.mutateAsync({ id: rescheduleAppointment.id, scheduledAt: iso.toISOString() });
+                      toast({ title: 'Rescheduled', description: 'Appointment rescheduled successfully' });
+                      setRescheduleDialogOpen(false);
+                      setRescheduleAppointment(null);
+                      setRescheduleDate('');
+                    } catch (err) {
+                      console.error(err);
+                      toast({ title: 'Error', description: 'Failed to reschedule', variant: 'destructive' });
+                    }
+                  }}
+                  className="bg-nutricare-green"
+                >
+                  Confirm
+                </Button>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );

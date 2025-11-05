@@ -73,6 +73,36 @@ export default function Login() {
     }
   };
 
+  const handleResendVerification = async () => {
+    const email = form.getValues('email');
+    if (!email) {
+      toast({ title: 'Email required', description: 'Please enter your email to resend verification code.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/auth/resend-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, type: 'registration' }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Failed to resend code');
+
+      // Persist pending email and redirect to verification
+      try {
+        localStorage.setItem('pending_email', email.toLowerCase());
+        localStorage.setItem('pending_type', 'registration');
+      } catch (e) {}
+
+      toast({ title: 'OTP Sent', description: 'Verification code resent. Please check your email.' });
+      setLocation(`/verify-otp?email=${encodeURIComponent(email)}&type=registration`);
+    } catch (err: any) {
+      toast({ title: 'Resend Failed', description: err.message || 'Please try again later.', variant: 'destructive' });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-nutricare-green/10 via-white to-nutricare-light/10 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center p-4">
       <FloatingElements />
@@ -178,6 +208,14 @@ export default function Login() {
                 className="text-nutricare-green hover:text-nutricare-dark font-medium transition-colors"
               >
                 Forgot Password?
+              </button>
+            </div>
+            <div className="text-center">
+              <button
+                onClick={handleResendVerification}
+                className="text-nutricare-green hover:text-nutricare-dark font-medium transition-colors"
+              >
+                Resend verification code
               </button>
             </div>
             
