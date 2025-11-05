@@ -1106,7 +1106,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const newDate = new Date(scheduledAt);
       if (isNaN(newDate.getTime())) return res.status(400).json({ message: 'Invalid date' });
 
-      await storage.updateAppointmentSchedule(appointmentId, newDate);
+      // Business rule: proposed time must be at least 12 hours from now
+      const now = new Date();
+      const minMs = 1000 * 60 * 60 * 12; // 12 hours
+      if (newDate.getTime() - now.getTime() < minMs) {
+        return res.status(400).json({ message: 'Proposed time must be at least 12 hours from now' });
+      }
+
+      // Business rule: proposed time must fall within one of the nutritionist's Available schedule slots
+      try {
+        const schedule = await storage.getNutritionistSchedule(String(appt.nutritionistId));
+        const matches = (schedule || []).some((slot: any) => {
+          try {
+            if (!slot || slot.status !== 'Available') return false;
+            const slotStart = new Date(slot.startTime);
+            const slotEnd = new Date(slot.endTime);
+            return newDate.getTime() >= slotStart.getTime() && newDate.getTime() <= slotEnd.getTime();
+          } catch (e) { return false; }
+        });
+        if (!matches) {
+          return res.status(400).json({ message: 'Proposed time is outside the nutritionist\'s available working hours' });
+        }
+      } catch (e) {
+        console.warn('Failed to validate nutritionist schedule for reschedule:', e);
+      }
 
       // Notify the opposite party depending on who initiated the change
       try {
@@ -1129,36 +1152,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }).catch(()=>{});
           }
         } else if (actorIsNutritionist) {
-          // nutritionist initiated -> notify user
+          // nutritionist initiated -> create a proposal (don't immediately update appointment). User must accept/reject.
+          const proposedAtIso = newDate.toISOString();
+
           await storage.createNotification({
             userId: appt.userId,
             type: 'appointment',
-            title: 'Appointment time updated',
-            message: `Your appointment ${appointmentId} has been moved to ${newDate.toLocaleString()} by the nutritionist.`,
-            data: { appointmentId },
+            title: 'Proposed new appointment time',
+            message: `The nutritionist has proposed to move your appointment ${appointmentId} to ${newDate.toLocaleString()}. Please accept or reject the proposal from your Appointments page.`,
+            data: { appointmentId, proposedAt: proposedAtIso, proposedByNutritionist: true },
           });
 
           const user = await storage.getUser(appt.userId);
           if (user && user.email) {
-            const subject = `Your appointment time was updated — ${newDate.toLocaleString()}`;
+            const subject = `Proposed new time for your appointment — ${newDate.toLocaleString()}`;
             const html = `
               <div style="font-family: Arial, sans-serif; max-width:600px; margin:0 auto; padding:20px;">
                 <div style="text-align:center; margin-bottom:20px;">
                   <div style="background:linear-gradient(135deg,#10B981,#34D399); width:72px; height:72px; border-radius:50%; margin:0 auto 12px; display:flex; align-items:center; justify-content:center;">
                     <span style="color:white; font-size:30px;">🌿</span>
                   </div>
-                  <h2 style="color:#065f46; margin:0;">Your appointment time has been updated</h2>
+                  <h2 style="color:#065f46; margin:0;">New appointment time proposed</h2>
                 </div>
                 <div style="background:#f8fffe; border:1px solid #d1fae5; border-radius:12px; padding:18px;">
                   <p style="color:#374151; line-height:1.6;">Hi ${user.firstName || 'there'},</p>
-                  <p style="color:#374151; line-height:1.6;">The nutritionist has updated your consultation to <strong>${newDate.toLocaleString()}</strong>. This appointment will be an <strong>offline (in-person)</strong> consultation — please be prepared to attend at the scheduled location.</p>
-                  <p style="color:#374151; line-height:1.6;">If this time doesn't work for you, you may reschedule from your Appointments page.</p>
+                  <p style="color:#374151; line-height:1.6;">Your nutritionist has proposed to move your appointment to <strong>${newDate.toLocaleString()}</strong>. Please open your Appointments page to accept or reject this proposal.</p>
+                  <p style="color:#374151; line-height:1.6;">If you accept, we will notify the nutritionist and confirm the appointment.</p>
                 </div>
                 <div style="text-align:center; margin-top:18px; color:#9ca3af; font-size:12px;">© ${new Date().getFullYear()} NutriCare++. Healthy eating, happier you.</div>
               </div>
             `;
             sendMail({ to: user.email, subject, html }).catch((e) => {
-              console.warn('Failed to send nutritionist-initiated reschedule email to user:', e);
+              console.warn('Failed to send nutritionist proposal email to user:', e);
             });
           }
         }
@@ -1170,6 +1195,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error rescheduling appointment:', error);
       res.status(500).json({ message: 'Failed to reschedule' });
+    }
+  });
+
+  // User responds to a nutritionist-initiated reschedule proposal
+  app.post('/api/appointments/:id/respond-reschedule', requireAuth, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      const appointmentId = req.params.id;
+      const { action, proposedAt } = req.body || {}; // action: 'accept' | 'reject'
+      if (!action || !['accept', 'reject'].includes(action)) return res.status(400).json({ message: 'Invalid action' });
+      if (!proposedAt) return res.status(400).json({ message: 'proposedAt is required' });
+
+      const appt = await storage.getAppointmentById(appointmentId);
+      if (!appt) return res.status(404).json({ message: 'Appointment not found' });
+      if (String(appt.userId) !== String(userId)) return res.status(403).json({ message: 'Not allowed' });
+
+      const newDate = new Date(proposedAt);
+      if (isNaN(newDate.getTime())) return res.status(400).json({ message: 'Invalid date' });
+
+      // Business rule: proposed time must be at least 12 hours from now
+      const now = new Date();
+      const minMs = 1000 * 60 * 60 * 12; // 12 hours
+      if (newDate.getTime() - now.getTime() < minMs) {
+        return res.status(400).json({ message: 'Proposed time must be at least 12 hours from now' });
+      }
+
+      // Ensure proposedAt is within nutritionist schedule
+      try {
+        const schedule = await storage.getNutritionistSchedule(String(appt.nutritionistId));
+        const matches = (schedule || []).some((slot: any) => {
+          try {
+            if (!slot || slot.status !== 'Available') return false;
+            const slotStart = new Date(slot.startTime);
+            const slotEnd = new Date(slot.endTime);
+            return newDate.getTime() >= slotStart.getTime() && newDate.getTime() <= slotEnd.getTime();
+          } catch (e) { return false; }
+        });
+        if (!matches) {
+          return res.status(400).json({ message: 'Proposed time is outside the nutritionist\'s available working hours' });
+        }
+      } catch (e) {
+        console.warn('Failed to validate nutritionist schedule for response to proposal:', e);
+      }
+
+      // Handle accept/reject
+      if (action === 'accept') {
+        await storage.updateAppointmentSchedule(appointmentId, newDate);
+        // Mark appointment as confirmed
+        await storage.updateAppointmentStatus(appointmentId, 'confirmed');
+
+        // Notify nutritionist and email
+        try {
+          const nutritionistsList = await storage.getNutritionists();
+          const nutritionist = (nutritionistsList || []).find((n: any) => String(n.id) === String(appt.nutritionistId));
+          if (nutritionist) {
+            await storage.createNotification({
+              userId: nutritionist.userId,
+              type: 'appointment',
+              title: 'Reschedule accepted',
+              message: `User accepted the proposed time for appointment ${appointmentId}: ${newDate.toLocaleString()}`,
+              data: { appointmentId, proposedAt: newDate.toISOString() },
+            });
+
+            const nutrUser = await storage.getUser(nutritionist.userId);
+            if (nutrUser && nutrUser.email) {
+              await sendMail({
+                to: nutrUser.email,
+                subject: `Reschedule accepted by user — ${newDate.toLocaleString()}`,
+                text: `The user has accepted the proposed reschedule for appointment ${appointmentId} to ${newDate.toLocaleString()}.`,
+              }).catch(()=>{});
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to notify nutritionist about accepted reschedule:', e);
+        }
+
+        return res.json({ message: 'Reschedule accepted and confirmed' });
+      }
+
+      // reject
+      try {
+        const nutritionistsList = await storage.getNutritionists();
+        const nutritionist = (nutritionistsList || []).find((n: any) => String(n.id) === String(appt.nutritionistId));
+        if (nutritionist) {
+          await storage.createNotification({
+            userId: nutritionist.userId,
+            type: 'appointment',
+            title: 'Reschedule rejected',
+            message: `User rejected the proposed time for appointment ${appointmentId}.`,
+            data: { appointmentId },
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to notify nutritionist about rejected reschedule:', e);
+      }
+
+      res.json({ message: 'Reschedule proposal rejected' });
+    } catch (error) {
+      console.error('Error responding to reschedule proposal:', error);
+      res.status(500).json({ message: 'Failed to respond to reschedule' });
     }
   });
 

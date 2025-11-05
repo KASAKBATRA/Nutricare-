@@ -109,17 +109,13 @@ class NutritionService {
   async getNutrition(foodName: string, quantity: number, unit: string): Promise<NutritionData> {
     try {
       this.initializeCredentials();
-      const makeNutrientsRequest = async (queryText: string) => {
-        const resp = await fetch(`${this.baseUrl}/natural/nutrients`, {
-          method: "POST",
-          headers: this.getHeaders(),
-          body: JSON.stringify({ query: queryText }),
-        });
-        return resp;
-      };
-
-      // First try using the raw provided name
-      let response = await makeNutrientsRequest(`${quantity} ${unit} ${foodName}`);
+      const response = await fetch(`${this.baseUrl}/natural/nutrients`, {
+        method: "POST",
+        headers: this.getHeaders(),
+        body: JSON.stringify({
+          query: `${quantity} ${unit} ${foodName}`,
+        }),
+      });
 
       if (!response.ok) {
         // capture body for debugging
@@ -130,26 +126,7 @@ class NutritionService {
           bodyText = '<failed to read body>';
         }
         console.error(`Nutritionix API returned ${response.status} ${response.statusText}: ${bodyText}`);
-
-        // If Nutritionix couldn't match the food, attempt a search lookup and retry with the common name
-        try {
-          const searchResults = await this.searchFoods(foodName);
-          const common = searchResults?.common?.[0];
-          if (common && common.food_name) {
-            const altQuery = `${quantity} ${unit} ${common.food_name}`;
-            console.info(`Nutritionix: retrying nutrients request with common name: ${altQuery}`);
-            response = await makeNutrientsRequest(altQuery);
-          }
-        } catch (searchErr) {
-          console.warn('Nutritionix search fallback failed:', searchErr);
-        }
-      }
-
-      // If still not OK after fallback attempts, log and return zeros
-      if (!response.ok) {
-        let bodyText = '';
-        try { bodyText = await response.text(); } catch (e) { bodyText = '<failed to read body>'; }
-        console.error(`Nutritionix nutrients final failure: ${response.status} ${response.statusText}: ${bodyText}`);
+        // Graceful fallback: return zeros instead of throwing so callers can continue
         return {
           calories: 0,
           protein: 0,
