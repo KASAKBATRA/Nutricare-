@@ -7,43 +7,49 @@ import { Github, Linkedin, ExternalLink, Star, Users, Target, Search, Code, User
 
 const About = () => {
   const [activeTab, setActiveTab] = useState('problem');
-
   const tabData = {
     problem: {
       icon: <Target className="w-5 h-5" />,
       title: "Problem",
-      content: "People often struggle with maintaining a healthy diet due to lack of awareness and personalization. Existing apps focus either on calorie counting or general diet tips, but they miss real-world challenges like: Different cooking methods at home (spoon/bowl size inconsistency), Packaged food health impact analysis, No easy link between patients and certified nutritionists, Lack of multilingual support for non-English speakers, Limited motivation and accountability as users feel isolated. Hence, there was a need for an inclusive, AI-driven platform that combines nutrition tracking, expert support, and a motivating community."
+      content: "Many users struggle to maintain healthy diets because existing tools focus narrowly on calorie counting and lack personalization for real home-cooking practices. Key gaps: inconsistent portion measurement (utensils), variable cooking methods, limited access to certified nutritionists, poor multilingual support, and weak motivation/community features. These gaps make practical, reliable nutrition tracking difficult for everyday people."
     },
     solution: {
       icon: <Star className="w-5 h-5" />,
       title: "Solution",
-      content: "NutriCaree+ is designed as a one-stop smart health companion. It provides: AI-powered food analysis with healthy alternatives, Disease-specific diet plans generated dynamically, Nutritionist panel where users can book real-time consultations, Automatic generation of professional-style health reports (daily, weekly, monthly), A social feed like Instagram for sharing progress, posts, and motivation, Multi-language AI chatbot and voice assistant to guide users, Stress management module that goes beyond diet, tracking real-life stress triggers and suggesting coping strategies. NutriCaree+ bridges the gap between technology, nutrition, and community."
+      content: "NutriCare++ is a full‑stack nutrition companion that combines automated nutrition estimation, personalized baselines, expert consultations, and community motivation. It uses Nutritionix for food data, a learned per-user baseline to improve accuracy, Utensil calibration to map bowls/spoons to grams, an AI-powered multilingual chatbot (OpenAI) for guidance, and an appointments/reports system to connect users with nutritionists. The result is a practical, privacy-conscious tool for real-world eating habits."
     },
     usp: {
       icon: <Users className="w-5 h-5" />,
       title: "Unique Value (USP)",
-      content: "Unlike existing diet trackers, NutriCaree+ integrates multiple aspects into a single ecosystem: Combines AI, community, and professional consultations, Multilingual chatbot ensures inclusivity, Reports are lab-style and professional, suitable to be shared with doctors, Appointment booking and data-sharing with nutritionists are built-in, The app adapts to regional diets, not just Western foods, Stress management is integrated alongside nutrition for holistic health. This makes NutriCaree+ unique as a fusion of Instagram-like community + AI diet analyzer + healthcare portal."
+      content: "Unlike single-purpose calorie trackers, NutriCare++ fuses: personalized calorie baselines (learned from user data), utensil calibration for realistic portioning, integrated nutritionist appointments & professional reports, multilingual AI assistance, and a social feed for accountability. This makes it useful for both individual self-monitoring and clinical/consultation contexts."
     },
     research: {
       icon: <Search className="w-5 h-5" />,
-      title: "Past Research",
-      content: "Based on the reviewed research papers (uploaded in Excel): Most prior studies focused only on calorie tracking and BMI prediction, Few apps included disease-specific diet suggestions, Chatbot integration was often rule-based, not AI-powered, Social/motivation aspects were either absent or minimal. NutriCaree+ builds upon this research gap by merging food analysis, consultations, reports, and social interaction into a single app, making it more practical for real-world users."
+      title: "Research & Motivation",
+      content: "Literature showed most consumer apps emphasize calorie logging without adapting to regional recipes or home-cooking variance. NutriCare++ targets that gap by combining nutrition APIs with per-user learning and nutritionist workflows so recommendations are practical and locally relevant."
     },
     tech: {
       icon: <Code className="w-5 h-5" />,
       title: "Tech Stack",
-      content: "NutriCaree+ has been developed using a modern full-stack approach: Frontend: React + TailwindCSS (responsive UI, animations, dynamic rendering), Backend: Python (Flask/FastAPI for APIs), Database: MongoDB / PostgreSQL for user data, food logs, nutritionist data, APIs: Nutritionix (food & calorie data), OpenAI API (AI chatbot & insights), Email API (OTP & verification), AI Modules: NLP for chatbot, Image recognition for food label scanning, ML models for stress analysis, Deployment: Replit (for development), Vercel/Render/Heroku (for production), Security: JWT authentication, OTP verification for login, password reset flow. This ensures scalability, speed, and user data protection."
+      content: "Frontend: React + Vite + TypeScript + TailwindCSS. Backend: Node.js + Express (TypeScript). DB: PostgreSQL via Drizzle ORM (Neon). Nutrition data: Nutritionix API. AI: OpenAI (chat & nutrition analysis) with optional local Python fallback. OCR: Tesseract.js. Sessions: Postgres-backed express-session. Build tooling: Vite, esbuild, drizzle-kit for migrations."
     }
   };
 
   const techStack = [
     { name: "React", category: "Frontend" },
+    { name: "Vite", category: "Build" },
+    { name: "TypeScript", category: "Language" },
     { name: "TailwindCSS", category: "Styling" },
-    { name: "Python", category: "Backend" },
-    { name: "MongoDB", category: "Database" },
-    { name: "OpenAI API", category: "AI" },
+    { name: "Node.js / Express", category: "Backend" },
+    { name: "Drizzle ORM", category: "ORM" },
+    { name: "PostgreSQL (Neon)", category: "Database" },
     { name: "Nutritionix API", category: "Data" },
-    { name: "Vercel", category: "Deployment" }
+    { name: "OpenAI API", category: "AI" },
+    { name: "Tesseract.js", category: "OCR" },
+    { name: "Radix UI", category: "UI" },
+    { name: "Framer Motion", category: "Animations" },
+    { name: "@tanstack/react-query", category: "Data fetching" },
+    { name: "Recharts", category: "Charts" }
   ];
 
   return (
@@ -108,7 +114,7 @@ const About = () => {
                         <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
                         <div>
                           <p className="font-medium text-gray-900 dark:text-white">Supervision</p>
-                          <p className="text-gray-600 dark:text-gray-300">Prof. Dr. Archana Kumar & Mr. Ritesh Kumar (Assistant Professor)</p>
+                          <p className="text-gray-600 dark:text-gray-300">Prof. Dr. Archana Kumar, Mr. Ritesh Kumar (Assistant Professor), and Ms. Meenu</p>
                         </div>
                       </div>
                     </div>
@@ -138,7 +144,7 @@ const About = () => {
         {/* Project Information Tabs */}
         <Card className="shadow-xl border-0">
           <CardHeader className="bg-gradient-to-r from-green-500 to-green-400 text-white">
-            <CardTitle className="text-2xl text-center">NutriCaree+ Project Information</CardTitle>
+            <CardTitle className="text-2xl text-center">NutriCare++ Project Information</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">

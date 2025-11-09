@@ -36,6 +36,8 @@ NutriCare++ is a personal nutrition and health-tracking app with features such a
 
 The app aims for a smooth UX around sign-up verification so users don't get stuck between "already exists" and "please verify" states.
 
+Supervision: Prof. Dr. Archana Kumar, Mr. Ritesh Kumar (Assistant Professor), and Ms. Meenu.
+
 ---
 
 ## Architecture & folders
