@@ -71,8 +71,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     resave: false,
     saveUninitialized: false,
     cookie: {
+      // In production we require secure cookies. When the client and API are
+      // on different origins (cross-site) the cookie must be SameSite=None
+      // and Secure to be sent by browsers when `fetch(..., { credentials: 'include' })`.
       secure: process.env.NODE_ENV === 'production',
       httpOnly: true,
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     },
   }));

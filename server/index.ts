@@ -8,7 +8,18 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
-app.use(cors());
+// Configure CORS to allow credentialed requests from the client.
+// If you deploy client and server on different origins (e.g. Vercel/Netlify client + Render API)
+// the client must send credentials and the server must allow them.
+// Set CLIENT_URL environment variable to the origin of your client (e.g. https://app.example.com)
+// If CLIENT_URL is not set, `origin: true` will echo the request origin (useful for same-origin deployments).
+const clientOrigin = process.env.CLIENT_URL || true;
+app.use(
+  cors({
+    origin: clientOrigin as any,
+    credentials: true,
+  }),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
