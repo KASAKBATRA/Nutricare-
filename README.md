@@ -100,6 +100,99 @@ Contact
 If you want help deploying or hardening this app (secrets rotation, Dockerfile, GitHub Actions), open an issue or ping me in the repo.
 
 — NutriCare++ Team 🌱
+
+Diagrams & Flowcharts
+------
+Below are simple Mermaid diagrams that explain the main flows of the application (architecture, auth/session, food logging, and build/deploy). Paste these into any Markdown renderer that supports Mermaid (GitHub supports Mermaid in .md files) to view them as diagrams.
+
+1) High-level architecture
+
+```mermaid
+flowchart LR
+  Browser[User Browser / Client (Vite React)]
+  subgraph FrontendHost
+    Vercel[Vercel (optional static host)]
+  end
+  Render[Render (Node/Express server)]
+  DB[(Postgres / Neon)]
+  Nutritionix[Nutritionix API]
+  SMTP[SMTP Email]
+  PythonChat[Python Chatbot service (optional)]
+  OpenAI[OpenAI API]
+
+  Browser -->|HTTP (static)| Vercel
+  Vercel -->|Server-side proxy /api/*| Render
+  Browser -->|Direct dev mode / same-origin| Render
+  Render --> DB
+  Render --> Nutritionix
+  Render --> SMTP
+  Render --> PythonChat
+  PythonChat -->|if unreachable| OpenAI
+  Render --> OpenAI
+```
+
+2) Authentication & session flow (registration / verify / login)
+
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant F as Frontend
+  participant S as Server (Express)
+  participant DB as Postgres (sessions/users)
+  participant SMTP as Email
+
+  B->>F: fill register form
+  F->>S: POST /api/auth/register (email, password)
+  S->>DB: create user + store otp/temp
+  S->>SMTP: send OTP email
+  SMTP-->>B: user receives OTP via email
+
+  B->>F: submit OTP
+  F->>S: POST /api/auth/verify-otp
+  S->>DB: verify OTP, mark user verified
+  S->>DB: create session row (connect-pg-simple)
+  S-->>B: 200 + Set-Cookie: connect.sid=... (HttpOnly; Secure)
+  B->>F: subsequent requests include cookie
+  F->>S: GET /api/auth/user (with cookie)
+  S->>DB: lookup session -> find userId -> respond with user
+```
+
+3) Food logging flow (add meal)
+
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant S as Server
+  participant N as Nutritionix
+  participant DB as Postgres/Storage
+
+  B->>S: POST /api/add-meal (mealName, qty, unit) + cookie
+  S->>S: requireAuth -> getUserId from session
+  S->>DB: try baseline lookup (userMealBaseline)
+  alt baseline available
+    S->>DB: use baseline calories
+  else baseline missing
+    S->>N: call Nutritionix API to fetch nutrition per quantity/unit
+    N-->>S: nutrition data (calories, macros)
+  end
+  S->>DB: create foodItem (or reuse) and createFoodLog
+  S-->>B: response with adjusted_calories, meal info
+```
+
+4) Build & deployment flow
+
+```mermaid
+flowchart TD
+  LocalDev[Local dev] -->|npm run dev| DevServer[Vite + tsx]
+  LocalDev -->|npm run build| Build[Build: vite build + esbuild server]
+  Build --> Dist[dist/ (public + server bundle)]
+  Dist -->|npm run start| Prod[Render / Node host]
+  Prod --> DB[(Postgres)]
+  Prod --> Nutritionix
+  Prod --> SMTP
+```
+
+If you'd like, I can commit these diagrams as a separate `docs/diagrams.md` file, or add a small PNG export of each diagram for the README.
 # NutriCare++ (Nutricare)
 
 A nutrition tracking web application with user accounts and lightweight AI chat features.
