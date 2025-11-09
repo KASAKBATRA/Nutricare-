@@ -151,7 +151,8 @@ sequenceDiagram
   F->>S: POST /api/auth/verify-otp
   S->>DB: verify OTP, mark user verified
   S->>DB: create session row (connect-pg-simple)
-  S-->>B: 200 + Set-Cookie: connect.sid=... (HttpOnly; Secure)
+  S-->>B: 200 + Set-Cookie: connect.sid=...
+  Note right of B: cookie attributes: HttpOnly, Secure
   B->>F: subsequent requests include cookie
   F->>S: GET /api/auth/user (with cookie)
   S->>DB: lookup session -> find userId -> respond with user
