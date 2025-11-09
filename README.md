@@ -1,3 +1,105 @@
+# NutriCare++
+
+Healthy eating, happier you. 🌿
+
+This repository contains a full-stack nutrition app: a Vite + React client and an Express/TypeScript server that serves the API and the static client in production. The project supports user registration, OTP verification, food logging, water & weight tracking, appointments, and an AI/chat helper.
+
+Live demo
+------
+- Backend + full app (deployed on Render): https://nutricaree.onrender.com/
+
+Highlights
+------
+- Full-stack TypeScript: Vite (React) frontend, Node + Express backend
+- Postgres session storage (connect-pg-simple)
+- Nutritionix integration for nutrition data
+- Email OTP + password reset flows
+- Chat & AI fallback (Python service or OpenAI)
+- Opinionated structure: client/ (frontend) and server/ (backend) with single root build command
+
+Quick start (local)
+------
+Prerequisites
+- Node 18+ (or Node 20)
+- PostgreSQL (or use a hosted DB)
+
+Install and run in development:
+
+```powershell
+# from repo root
+npm ci
+npm run dev
+```
+
+Build for production (single artifact)
+
+```powershell
+npm ci
+npm run build
+# start production (after build)
+npm run start
+```
+
+Notes on the commands
+- `npm run build` runs `vite build` for the client and bundles the server via esbuild into `dist/`.
+- `npm run start` runs `node dist/index.js` and serves both API and client (production).
+
+Environment variables
+------
+Create a `.env` (DO NOT commit). The important variables used by the server are:
+
+- `DATABASE_URL` — Postgres connection string used by drizzle / session store.
+- `SESSION_SECRET` — secret used by `express-session` (required in production).
+- `NUTRITIONIX_APP_ID` and `NUTRITIONIX_API_KEY` — Nutritionix API credentials.
+- `EMAIL_USER`, `EMAIL_PASS` — SMTP credentials for OTP/email features.
+- `OPENAI_API_KEY` — optional, required if you use OpenAI fallback for chat.
+
+Security & secrets
+------
+- Never commit `.env` to the repo. If you accidentally pushed secrets, rotate them immediately (DB credentials, email password, API keys).
+- Use your hosting provider's environment variable settings (Render, Vercel, GitHub Actions secrets, etc.).
+
+Deploy notes
+------
+Recommended setup to keep session & cookie behavior simple:
+
+1. Keep the Node server running on a single host (Render, Railway, Fly) and point your static frontend to the same origin or proxy API requests to that host.
+2. If you want to serve static frontend from Vercel and backend from Render, either:
+   - Configure Vercel to proxy `/api/*` to your Render URL (we included a `vercel.json` example for this), or
+   - Update server cookie settings (SameSite/Domain) and CORS to handle cross-origin cookies (not recommended unless you understand cookie/security implications).
+
+Render quick deploy
+1. Create a Web Service on Render.
+2. Build command: `npm ci && npm run build`
+3. Start command: `npm run start`
+4. Set environment variables in Render's dashboard (DATABASE_URL, SESSION_SECRET, etc.).
+
+Vercel quick deploy (frontend only with proxy)
+1. Connect Vercel to this repo and use `vercel.json` included in the repo.
+2. The `vercel.json` routes `/api/*` to the Render backend so sessions and cookies continue to work.
+
+Debugging login/session issues
+------
+- If dashboard shows after login returns 401 on `/api/auth/user`, check:
+  - `Set-Cookie` header on `/api/auth/login` response (should set `connect.sid`).
+  - That subsequent requests include the cookie (headers -> `Cookie`).
+  - Render logs for `🔑 LOGIN SUCCESS` and `🔑 SESSION SET` messages.
+  - Correct `DATABASE_URL` and `SESSION_SECRET` on the host.
+
+Contributing
+------
+- Bug reports and PRs welcome.
+- Please open issues for feature requests or major design changes.
+
+License
+------
+MIT
+
+Contact
+------
+If you want help deploying or hardening this app (secrets rotation, Dockerfile, GitHub Actions), open an issue or ping me in the repo.
+
+— NutriCare++ Team 🌱
 # NutriCare++ (Nutricare)
 
 A nutrition tracking web application with user accounts and lightweight AI chat features.
