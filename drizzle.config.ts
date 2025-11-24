@@ -6,7 +6,7 @@ if (!process.env.DATABASE_URL) {
 import type { Config } from "drizzle-kit";
 
 export default {
-  schema: "./shared/schema.ts",   // यहाँ तुम्हारी schema फाइल का सही path डालो
+  schema: "./shared/schema.ts",   
   out: "./drizzle",
   dialect: "postgresql",          // ✅ यह डालना ज़रूरी है
   dbCredentials: {

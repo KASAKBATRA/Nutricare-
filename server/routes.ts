@@ -12,8 +12,8 @@ declare module "express-session" {
 }
 import { storage } from "./storage";
 import { db } from "./db";
-import { users, nutritionists } from "@shared/schema";
-import { desc, eq } from "drizzle-orm";
+import { users, nutritionists, foodItems } from "@shared/schema";
+import { desc, eq, sql } from "drizzle-orm";
 import { sendMail } from "./email";
 import { generateChatResponse } from "./openai";
 import { nutritionService, addMealSchema, type AddMealData } from "./nutrition";
@@ -51,6 +51,199 @@ function requireAuth(req: any, res: any, next: any) {
     return res.status(401).json({ message: "Unauthorized" });
   }
   next();
+}
+
+// Health analysis helper
+function analyzeHealthStatus(nutrition: any) {
+  const { calories, protein, carbs, fat, fiber, sugar, sodium } = nutrition;
+  
+  const issues: string[] = [];
+  const positives: string[] = [];
+  let score = 50; // Start with neutral score
+  
+  console.log(`🔬 Analyzing nutrition: Cal=${calories}, Pro=${protein}g, Fat=${fat}g, Carbs=${carbs}g, Fiber=${fiber}g, Sugar=${sugar}g, Sodium=${sodium}mg`);
+  
+  // Check for unhealthy indicators (per 100g)
+  if (sugar >= 15) {
+    issues.push(`High sugar (${sugar.toFixed(1)}g)`);
+    score -= 15;
+  }
+  if (sodium >= 400) {
+    issues.push(`High sodium (${sodium.toFixed(0)}mg)`);
+    score -= 15;
+  }
+  if (fat >= 20) {
+    issues.push(`High fat (${fat.toFixed(1)}g)`);
+    score -= 10;
+  }
+  if (calories >= 400) {
+    issues.push(`High calories (${calories} kcal)`);
+    score -= 10;
+  }
+  if (fiber < 2) {
+    issues.push(`Low fiber (${fiber.toFixed(1)}g)`);
+    score -= 5;
+  }
+  
+  // Check for healthy indicators
+  if (protein >= 8) {
+    positives.push(`Good protein (${protein.toFixed(1)}g)`);
+    score += 15;
+  }
+  if (fiber >= 5) {
+    positives.push(`High fiber (${fiber.toFixed(1)}g)`);
+    score += 15;
+  }
+  if (sugar <= 5) {
+    positives.push(`Low sugar (${sugar.toFixed(1)}g)`);
+    score += 10;
+  }
+  if (sodium <= 200) {
+    positives.push(`Low sodium (${sodium.toFixed(0)}mg)`);
+    score += 10;
+  }
+  
+  // Determine status based on EXACT user requirements
+  let status: 'Healthy' | 'Moderate' | 'Unhealthy';
+  let explanation: string;
+  let recommendation: string;
+  
+  // Classification logic: calories > 300 OR sugar > 15g OR fat > 20g → Unhealthy
+  if (calories > 300 || sugar > 15 || fat > 20) {
+    status = 'Unhealthy';
+    explanation = `Not recommended. ${issues.join(', ')}`;
+    recommendation = 'Consider healthier alternatives. This food is high in unhealthy components.';
+  } 
+  // If calories between 150-300 → Moderate
+  else if (calories >= 150 && calories <= 300) {
+    status = 'Moderate';
+    explanation = `Moderate nutrition profile. ${issues.length > 0 ? issues.join(', ') : 'Consider portion control'}`;
+    recommendation = 'Okay in moderation. Balance with healthier options throughout the day.';
+  } 
+  // Else → Healthy
+  else {
+    status = 'Healthy';
+    explanation = positives.length > 0 
+      ? `Great choice! ${positives.join(', ')}`
+      : 'Balanced nutrition profile';
+    recommendation = 'This is a good food choice. Enjoy in appropriate portions.';
+  }
+  
+  console.log(`📊 Classification: ${status} (Cal: ${calories}, Sugar: ${sugar}g, Fat: ${fat}g)`);
+  
+  return {
+    status,
+    score,
+    explanation,
+    recommendation,
+    issues,
+    positives,
+    nutritionBreakdown: {
+      calories: `${calories} kcal`,
+      protein: `${protein}g`,
+      carbs: `${carbs}g`,
+      fat: `${fat}g`,
+      fiber: `${fiber}g`,
+      sugar: `${sugar}g`,
+      sodium: `${sodium}mg`,
+    }
+  };
+}
+
+// Get healthy alternatives based on nutrition profile
+async function getHealthyAlternatives(nutrition: any): Promise<any[]> {
+  try {
+    console.log('🔍 Fetching healthy alternatives from Neon database...');
+    
+    // Fetch healthy foods from database (low calories, low sugar, low fat)
+    const healthyFoods = await db
+      .select()
+      .from(foodItems)
+      .where(sql`
+        CAST(${foodItems.caloriesPer100g} AS DECIMAL) <= 150 AND
+        CAST(${foodItems.sugarPer100g} AS DECIMAL) <= 10 AND
+        CAST(${foodItems.fatsPer100g} AS DECIMAL) <= 5
+      `)
+      .limit(5);
+    
+    if (healthyFoods.length > 0) {
+      console.log(`✅ Found ${healthyFoods.length} healthy alternatives from database`);
+      return healthyFoods.slice(0, 3).map(food => ({
+        name: food.name,
+        reason: 'Healthy choice: Low in calories, sugar, and fat',
+        examples: [food.name],
+        nutrition: {
+          calories: parseFloat(food.caloriesPer100g || '0'),
+          protein: parseFloat(food.proteinPer100g || '0'),
+          sugar: parseFloat(food.sugarPer100g || '0'),
+          sodium: parseFloat(food.sodiumPer100g || '0'),
+          fat: parseFloat(food.fatsPer100g || '0'),
+          fiber: parseFloat(food.fiberPer100g || '0'),
+          carbs: parseFloat(food.carbsPer100g || '0'),
+        }
+      }));
+    }
+  } catch (error) {
+    console.error('❌ Error fetching alternatives from database:', error);
+  }
+  
+  // Fallback to hardcoded healthy alternatives
+  console.log('📋 Using fallback alternatives');
+  const alternatives = [
+    {
+      name: 'Fresh Fruits',
+      reason: 'Low in calories, high in fiber and vitamins',
+      nutrition: { calories: 50, protein: 0.5, carbs: 13, fat: 0.2, fiber: 2.5, sugar: 10, sodium: 1 },
+      examples: ['Apple', 'Banana', 'Orange', 'Berries']
+    },
+    {
+      name: 'Vegetables',
+      reason: 'Very low in calories, high in fiber and nutrients',
+      nutrition: { calories: 25, protein: 2, carbs: 5, fat: 0.3, fiber: 3, sugar: 2, sodium: 20 },
+      examples: ['Broccoli', 'Carrots', 'Spinach', 'Bell Peppers']
+    },
+    {
+      name: 'Whole Grains',
+      reason: 'Good source of complex carbs and fiber',
+      nutrition: { calories: 120, protein: 4, carbs: 23, fat: 1, fiber: 3, sugar: 1, sodium: 5 },
+      examples: ['Brown Rice', 'Quinoa', 'Oats', 'Whole Wheat Bread']
+    },
+    {
+      name: 'Lean Protein',
+      reason: 'High in protein, low in fat',
+      nutrition: { calories: 165, protein: 31, carbs: 0, fat: 3.6, fiber: 0, sugar: 0, sodium: 74 },
+      examples: ['Chicken Breast', 'Fish', 'Tofu', 'Lentils']
+    },
+    {
+      name: 'Nuts and Seeds',
+      reason: 'Healthy fats, protein, and fiber',
+      nutrition: { calories: 180, protein: 6, carbs: 6, fat: 16, fiber: 3, sugar: 1, sodium: 5 },
+      examples: ['Almonds', 'Walnuts', 'Chia Seeds', 'Flaxseeds']
+    }
+  ];
+  
+  // If high in sugar, recommend low-sugar options
+  if (nutrition.sugar >= 15) {
+    return alternatives.filter(alt => alt.nutrition.sugar <= 5);
+  }
+  
+  // If high in sodium, recommend low-sodium options
+  if (nutrition.sodium >= 400) {
+    return alternatives.filter(alt => alt.nutrition.sodium <= 100);
+  }
+  
+  // If high in fat, recommend low-fat options
+  if (nutrition.fat >= 20) {
+    return alternatives.filter(alt => alt.nutrition.fat <= 5);
+  }
+  
+  // If high in calories, recommend lower-calorie options
+  if (nutrition.calories >= 400) {
+    return alternatives.filter(alt => alt.nutrition.calories <= 150);
+  }
+  
+  // Default: return top 3 healthiest options
+  return alternatives.slice(0, 3);
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -408,6 +601,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching food items:", error);
       res.status(500).json({ message: "Failed to fetch food items" });
+    }
+  });
+
+  // Direct database food search endpoint
+  // GET /api/foods?name=foodname
+  // Searches the food_items table using Drizzle ORM
+  // First tries exact match, then partial match with ILIKE
+  app.get('/api/foods', requireAuth, async (req, res) => {
+    try {
+      const foodName = req.query.name as string;
+      
+      if (!foodName) {
+        return res.status(400).json({ message: "Food name is required" });
+      }
+
+      // First try exact match (case-insensitive)
+      let results = await db
+        .select()
+        .from(foodItems)
+        .where(sql`LOWER(${foodItems.name}) = LOWER(${foodName})`)
+        .limit(1);
+
+      // If no exact match, try partial match (ILIKE)
+      if (results.length === 0) {
+        results = await db
+          .select()
+          .from(foodItems)
+          .where(sql`${foodItems.name} ILIKE ${`%${foodName}%`}`)
+          .limit(5);
+      }
+
+      if (results.length === 0) {
+        return res.status(404).json({ message: "Food not found" });
+      }
+
+      // Return the food data with nutrition information
+      const foodData = results.map(food => ({
+        id: food.id,
+        name: food.name,
+        brand: food.brand,
+        calories: parseFloat(food.caloriesPer100g || "0"),
+        protein: parseFloat(food.proteinPer100g || "0"),
+        carbs: parseFloat(food.carbsPer100g || "0"),
+        fat: parseFloat(food.fatsPer100g || "0"),
+        fiber: parseFloat(food.fiberPer100g || "0"),
+        sugar: parseFloat(food.sugarPer100g || "0"),
+        sodium: parseFloat(food.sodiumPer100g || "0"),
+        per100g: true, // Indicates values are per 100g
+      }));
+
+      res.json(results.length === 1 ? foodData[0] : foodData);
+    } catch (error) {
+      console.error("Error searching foods in database:", error);
+      res.status(500).json({ message: "Failed to search foods" });
     }
   });
 
@@ -856,6 +1103,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error searching foods:", error);
       res.status(500).json({ message: "Failed to search foods" });
+    }
+  });
+
+  // Analyze scanned food endpoint
+  app.post('/api/analyze-scanned-food', requireAuth, async (req: any, res) => {
+    try {
+      const { foodName } = req.body;
+      
+      if (!foodName) {
+        return res.status(400).json({ message: "Food name is required" });
+      }
+
+      console.log(`🔍 Analyzing scanned food: "${foodName}"`);
+
+      // Get nutrition from USDA API (100g serving)
+      let nutrition: any = null;
+      let source = 'usda';
+
+      try {
+        nutrition = await nutritionService.getNutritionFromUSDA(foodName, 100, 'grams');
+        console.log(`✅ Got nutrition from USDA for "${foodName}":`, nutrition);
+      } catch (usdaError: any) {
+        console.log(`❌ USDA failed for "${foodName}":`, usdaError.message);
+        return res.status(404).json({ 
+          message: `Could not find nutritional data for "${foodName}". Try searching with a more generic name.` 
+        });
+      }
+
+      // Analyze health status based on user's exact requirements
+      const analysis = analyzeHealthStatus(nutrition);
+      
+      // Get alternatives from database if unhealthy
+      let alternatives: any[] = [];
+      if (analysis.status === 'Unhealthy') {
+        alternatives = await getHealthyAlternatives(nutrition);
+      }
+
+      res.json({
+        nutrition,
+        source,
+        analysis,
+        alternatives,
+      });
+
+    } catch (error: any) {
+      console.error("Error analyzing scanned food:", error);
+      res.status(500).json({ message: error.message || "Failed to analyze food" });
+    }
+  });
+
+  // Get healthy alternatives endpoint
+  app.post('/api/get-healthy-alternatives', requireAuth, async (req: any, res) => {
+    try {
+      const alternatives = await getHealthyAlternatives({});
+      res.json({ alternatives });
+    } catch (error: any) {
+      console.error("Error fetching alternatives:", error);
+      res.status(500).json({ message: "Failed to fetch alternatives" });
     }
   });
 

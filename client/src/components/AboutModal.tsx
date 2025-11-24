@@ -53,8 +53,8 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
     solution: {
       icon: <Sparkles className="w-4 h-4" />,
       title: "Solution", 
-      content: "NutriCaree+ is a comprehensive AI-powered health ecosystem that addresses every aspect of nutrition and wellness. Our platform features intelligent food analysis that understands regional cuisines and cooking methods, providing personalized alternatives based on individual health conditions. Users can seamlessly book consultations with certified nutritionists through our integrated appointment system. The app generates professional-grade health reports suitable for medical consultations. Our social community functions like Instagram for health, where users share progress, recipes, and motivation. The multilingual AI chatbot provides 24/7 guidance in local languages, while our innovative stress management module recognizes that mental health and nutrition are interconnected.",
-      highlights: ["🤖 AI-Powered Personalization", "👥 Expert Nutritionist Network", "📱 Social Health Community", "🗣️ Multilingual Support", "📊 Professional Health Reports", "🧘 Integrated Stress Management"]
+      content: "NutriCaree+ is a comprehensive  health ecosystem that addresses every aspect of nutrition and wellness. Our platform features intelligent food analysis that understands regional cuisines and cooking methods, providing personalized alternatives based on individual health conditions. Users can seamlessly book consultations with certified nutritionists through our integrated appointment system. The app generates professional-grade health reports suitable for medical consultations. Our social community functions like Instagram for health, where users share progress, recipes, and motivation. The multilingual AI chatbot provides 24/7 guidance in local languages, while our innovative stress management module recognizes that mental health and nutrition are interconnected.",
+      highlights: ["👥 Expert Nutritionist Network", "📱 Social Health Community", "📊 Professional Health Reports", "🧘 Integrated Stress Management"]
     },
     usp: {
       icon: <Award className="w-4 h-4" />,
@@ -65,7 +65,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
     tech: {
       icon: <Code className="w-4 h-4" />,
       title: "Tech Stack",
-      content: "NutriCaree+ is built using modern web technologies for optimal performance and user experience. The frontend uses React with TypeScript for type safety and TailwindCSS for responsive design. Backend is powered by Node.js with Express server and PostgreSQL database with Drizzle ORM for efficient data management. Vite provides fast development builds, while Wouter handles client-side routing. React Query manages server state and caching. The entire application is deployed on Vercel for reliable hosting and Shadcn/ui provides beautiful, accessible components.",
+      content: "NutriCaree is built using modern web technologies for optimal performance and user experience. The frontend uses React with TypeScript for type safety and TailwindCSS for responsive design. Backend is powered by Node.js with Express server and PostgreSQL database with Drizzle ORM for efficient data management. Vite provides fast development builds, while Wouter handles client-side routing. React Query manages server state and caching. The entire application is deployed on Vercel for reliable hosting and Shadcn/ui provides beautiful, accessible components.",
       highlights: ["⚛️ React + TypeScript Frontend", "� Node.js + Express Backend", "🐘 PostgreSQL + Drizzle ORM", "⚡ Vite Build Tool", "🎯 Shadcn/ui Components", "▲ Vercel Deployment"]
     }
   } as const;
@@ -176,7 +176,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
                     <Users className="w-4 h-4" />
                     <span className="font-medium">Supervised by:</span>
                   </div>
-                  <p className="mt-1">Prof. Dr. Archana Kumar & Mr. Ritesh Kumar</p>
+                  <p className="mt-1">Prof. Dr. Archana Kumar, Mr. Ritesh Kumar & Ms. Meenu </p>
                 </div>
               </div>
             </div>

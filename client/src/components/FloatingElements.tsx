@@ -1,3 +1,5 @@
+//BG ELEMENTS FIGURES AND ALL
+
 import React from 'react';
 
 const floatingElements = [

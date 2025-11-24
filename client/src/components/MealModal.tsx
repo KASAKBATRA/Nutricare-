@@ -214,6 +214,7 @@ export function MealModal({ isOpen, onClose, onMealAdded, editingMeal }: MealMod
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(payload),
       });
       if (!response.ok) {
@@ -388,7 +389,9 @@ export function MealModal({ isOpen, onClose, onMealAdded, editingMeal }: MealMod
 
       try {
   const params = new URLSearchParams({ q: mealName, quantity: String(quantity), unit, intensity: cookingIntensity, oil_type: oilType, milk_type: milkType, spice_level: spiceLevel, utensil_type: utensilType, sugar_type: sugarType, category: detectedCategory || '' });
-        const resp = await fetch(`/api/estimate-calories?${params.toString()}`);
+        const resp = await fetch(`/api/estimate-calories?${params.toString()}`, {
+          credentials: 'include'
+        });
         if (!resp.ok) return;
         const json = await resp.json();
         if (!mounted) return;

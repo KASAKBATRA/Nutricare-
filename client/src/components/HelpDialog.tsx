@@ -107,11 +107,6 @@ export function HelpDialog({ children }: HelpDialogProps) {
 
   const smartFeatures = [
     {
-      title: "AI Chatbot",
-      description: "Get instant nutrition advice and meal suggestions from our AI assistant",
-      icon: "fas fa-robot"
-    },
-    {
       title: "Portion Estimation",
       description: "Use your phone camera to estimate portion sizes accurately",
       icon: "fas fa-expand-arrows-alt"
@@ -137,7 +132,7 @@ export function HelpDialog({ children }: HelpDialogProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-2xl">
             <i className="fas fa-question-circle text-nutricare-green"></i>
-            NutriCare++ Help & Features
+            NutriCare Help & Features
           </DialogTitle>
           <DialogDescription>
             Complete guide to all features and capabilities of NutriCare++
@@ -155,7 +150,7 @@ export function HelpDialog({ children }: HelpDialogProps) {
             </CardHeader>
             <CardContent>
               <p className="text-gray-600 dark:text-gray-300 leading-relaxed">
-                NutriCare++ is a comprehensive smart health and nutrition companion designed to help you achieve your wellness goals. 
+                NutriCare is a comprehensive smart health and nutrition companion designed to help you achieve your wellness goals. 
                 Our platform combines AI-powered insights, community support, and professional guidance to make healthy living easier and more enjoyable.
               </p>
             </CardContent>
@@ -240,10 +235,6 @@ export function HelpDialog({ children }: HelpDialogProps) {
                       <span>Start logging your meals and water intake</span>
                     </li>
                     <li className="flex items-start gap-2">
-                      <Badge variant="outline" className="w-6 h-6 p-0 flex items-center justify-center text-xs">3</Badge>
-                      <span>Explore the AI chatbot for personalized advice</span>
-                    </li>
-                    <li className="flex items-start gap-2">
                       <Badge variant="outline" className="w-6 h-6 p-0 flex items-center justify-center text-xs">4</Badge>
                       <span>Connect with the community for motivation</span>
                     </li>
@@ -284,11 +275,6 @@ export function HelpDialog({ children }: HelpDialogProps) {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-                <div className="p-4 border rounded-lg">
-                  <i className="fas fa-robot text-2xl text-nutricare-green mb-2"></i>
-                  <h4 className="font-semibold">AI Assistant</h4>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">Ask our AI chatbot for instant help</p>
-                </div>
                 <div className="p-4 border rounded-lg">
                   <i className="fas fa-users text-2xl text-blue-500 mb-2"></i>
                   <h4 className="font-semibold">Community</h4>
