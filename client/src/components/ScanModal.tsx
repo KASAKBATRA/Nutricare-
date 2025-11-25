@@ -18,8 +18,34 @@ function parseNutritionFacts(text: string) {
   
   // More aggressive number extraction - get ALL numbers from the line
   const extractAllNumbers = (line: string): number[] => {
+    // Match numbers including decimals, with or without units
     const matches = line.match(/\d+\.?\d*/g);
-    return matches ? matches.map(m => parseFloat(m)) : [];
+    return matches ? matches.map(m => parseFloat(m)).filter(n => !isNaN(n)) : [];
+  };
+  
+  // Helper to extract value and unit (e.g., "523 kcal" or "12g")
+  const extractValueWithUnit = (line: string, keyword: string): number => {
+    const regex = new RegExp(keyword + '[^\\d]*([\\d.]+)\\s*(g|mg|kcal|kj)?', 'i');
+    const match = line.match(regex);
+    if (match) {
+      return parseFloat(match[1]);
+    }
+    return 0;
+  };
+  
+  // Helper to find number after keyword in same line or next line
+  const findValueForKeyword = (startIdx: number, keyword: RegExp): number => {
+    for (let i = startIdx; i < Math.min(startIdx + 3, lines.length); i++) {
+      const line = lines[i];
+      if (keyword.test(line.toLowerCase())) {
+        const numbers = extractAllNumbers(line);
+        if (numbers.length > 0) {
+          // Take the largest meaningful number (usually the actual value)
+          return Math.max(...numbers.filter(n => n < 10000)); // Filter out very large numbers
+        }
+      }
+    }
+    return 0;
   };
   
   for (let i = 0; i < lines.length; i++) {
@@ -30,71 +56,184 @@ function parseNutritionFacts(text: string) {
     console.log(`Line ${i}: "${line}" → Numbers: [${numbers.join(', ')}]`);
     
     // Detect serving information
-    if ((lowerLine.includes('per') && lowerLine.includes('100')) || 
-        lowerLine.includes('serving') || 
-        lowerLine.includes('nutritive value')) {
+    if ((lowerLine.includes('per') && (lowerLine.includes('100') || lowerLine.includes('serving'))) || 
+        lowerLine.includes('nutritive value') || 
+        lowerLine.includes('serving size')) {
       servingInfo = line;
       console.log(`  ✓ Serving info: "${line}"`);
     }
     
-    // Energy/Calories - take the largest number on the line
-    if ((lowerLine.includes('energy') || lowerLine.includes('calor')) && numbers.length > 0) {
-      // If kJ mentioned, convert to kcal, otherwise use largest number
-      if (lowerLine.includes('kj')) {
-        const kjValue = Math.max(...numbers);
-        calories = Math.round(kjValue / 4.184);
-        console.log(`  ✓ Energy (kJ→kcal): ${kjValue} → ${calories}`);
-      } else {
-        calories = Math.max(...numbers);
-        console.log(`  ✓ Calories: ${calories}`);
+    // Energy/Calories - very flexible matching
+    if (!calories && (lowerLine.includes('energy') || lowerLine.includes('calor') || lowerLine.includes('kcal'))) {
+      if (numbers.length > 0) {
+        // If kJ mentioned, convert to kcal, otherwise use largest reasonable number
+        if (lowerLine.includes('kj')) {
+          const kjValue = Math.max(...numbers.filter(n => n > 100)); // kJ usually > 100
+          calories = Math.round(kjValue / 4.184);
+          console.log(`  ✓ Energy (kJ→kcal): ${kjValue} → ${calories}`);
+        } else {
+          // Take the most reasonable calorie value (typically 50-1000 for per 100g)
+          calories = Math.max(...numbers.filter(n => n >= 10 && n <= 1000));
+          console.log(`  ✓ Calories: ${calories}`);
+        }
       }
     }
     
-    // Protein
-    if (lowerLine.includes('protein') && numbers.length > 0) {
-      protein = numbers[numbers.length - 1]; // Usually last number is the value
-      console.log(`  ✓ Protein: ${protein}g`);
+    // Protein - multiple variations
+    if (!protein && (lowerLine.includes('protein') || lowerLine.includes('protien'))) {
+      if (!lowerLine.includes('of which') && numbers.length > 0) {
+        protein = numbers[numbers.length - 1]; // Usually last number
+        console.log(`  ✓ Protein: ${protein}g`);
+      }
     }
     
-    // Carbohydrates (avoid "of which" lines)
-    if (lowerLine.includes('carb') && !lowerLine.includes('of which') && numbers.length > 0) {
-      carbs = numbers[numbers.length - 1];
-      console.log(`  ✓ Carbs: ${carbs}g`);
+    // Carbohydrates - avoid "of which" lines
+    if (!carbs && (lowerLine.includes('carb') || lowerLine.includes('carbohydrate'))) {
+      if (!lowerLine.includes('of which') && !lowerLine.includes('sugar') && numbers.length > 0) {
+        carbs = numbers[numbers.length - 1];
+        console.log(`  ✓ Carbs: ${carbs}g`);
+      }
     }
     
-    // Total Fat (avoid saturated/trans fat lines)
-    if (lowerLine.includes('fat') && 
-        !lowerLine.includes('saturated') && 
-        !lowerLine.includes('trans') && 
-        numbers.length > 0) {
-      fat = numbers[numbers.length - 1];
-      console.log(`  ✓ Fat: ${fat}g`);
+    // Total Fat - avoid saturated/trans fat lines
+    if (!fat && lowerLine.includes('fat')) {
+      if (!lowerLine.includes('saturated') && !lowerLine.includes('trans') && 
+          !lowerLine.includes('mono') && !lowerLine.includes('poly') && numbers.length > 0) {
+        fat = numbers[numbers.length - 1];
+        console.log(`  ✓ Fat: ${fat}g`);
+      }
     }
     
     // Saturated Fat
-    if (lowerLine.includes('saturated') && numbers.length > 0) {
-      saturatedFat = numbers[numbers.length - 1];
-      console.log(`  ✓ Saturated Fat: ${saturatedFat}g`);
+    if (!saturatedFat && lowerLine.includes('saturated')) {
+      if (numbers.length > 0) {
+        saturatedFat = numbers[numbers.length - 1];
+        console.log(`  ✓ Saturated Fat: ${saturatedFat}g`);
+      }
     }
     
-    // Sugar
-    if (lowerLine.includes('sugar') && numbers.length > 0) {
-      sugar = numbers[numbers.length - 1];
-      console.log(`  ✓ Sugar: ${sugar}g`);
+    // Sugar - multiple variations
+    if (!sugar && (lowerLine.includes('sugar') || lowerLine.includes('sugars'))) {
+      if (numbers.length > 0) {
+        sugar = numbers[numbers.length - 1];
+        console.log(`  ✓ Sugar: ${sugar}g`);
+      }
     }
     
-    // Fiber
-    if ((lowerLine.includes('fiber') || lowerLine.includes('fibre')) && numbers.length > 0) {
-      fiber = numbers[numbers.length - 1];
-      console.log(`  ✓ Fiber: ${fiber}g`);
+    // Fiber - multiple spellings
+    if (!fiber && (lowerLine.includes('fiber') || lowerLine.includes('fibre') || lowerLine.includes('dietary fiber'))) {
+      if (numbers.length > 0) {
+        fiber = numbers[numbers.length - 1];
+        console.log(`  ✓ Fiber: ${fiber}g`);
+      }
     }
     
     // Sodium/Salt
-    if ((lowerLine.includes('sodium') || lowerLine.includes('salt')) && numbers.length > 0) {
-      const value = numbers[numbers.length - 1];
-      // If value is small (< 10), it's probably in grams, convert to mg
-      sodium = value < 10 ? value * 1000 : value;
-      console.log(`  ✓ Sodium: ${sodium}mg`);
+    if (!sodium && (lowerLine.includes('sodium') || lowerLine.includes('salt'))) {
+      if (numbers.length > 0) {
+        const value = numbers[numbers.length - 1];
+        // If value is small (< 10), it's probably in grams, convert to mg
+        sodium = value < 10 ? value * 1000 : value;
+        console.log(`  ✓ Sodium: ${sodium}mg`);
+      }
+    }
+  }
+  
+  // Fallback: Try scanning entire text for patterns if nothing found
+  if (calories === 0 && protein === 0 && carbs === 0 && fat === 0) {
+    console.log('🔄 Primary extraction failed, trying pattern matching on full text...');
+    
+    const fullText = text.toLowerCase();
+    
+    // Try to find nutrition values in various formats
+    // Format 1: "Energy 523kcal" or "Energy: 523 kcal"
+    const caloriePatterns = [
+      /energy[:\s]+(\d+\.?\d*)\s*kcal/i,
+      /calor(?:ie)?s?[:\s]+(\d+\.?\d*)/i,
+      /(\d+\.?\d*)\s*kcal/i
+    ];
+    
+    for (const pattern of caloriePatterns) {
+      const match = text.match(pattern);
+      if (match && !calories) {
+        calories = parseInt(match[1]);
+        console.log(`  ✓ Pattern matched Calories: ${calories}`);
+        break;
+      }
+    }
+    
+    // Format 2: "Protein 12.5g" or "Protein: 12.5 g"
+    const proteinPatterns = [
+      /protein[:\s]+(\d+\.?\d*)\s*g/i,
+      /protein[^\d]*(\d+\.?\d*)/i
+    ];
+    
+    for (const pattern of proteinPatterns) {
+      const match = text.match(pattern);
+      if (match && !protein) {
+        protein = parseFloat(match[1]);
+        console.log(`  ✓ Pattern matched Protein: ${protein}g`);
+        break;
+      }
+    }
+    
+    // Format 3: "Carbohydrate 60g" or "Total Carbohydrate: 60 g"
+    const carbPatterns = [
+      /carbohydrate[s]?[:\s]+(\d+\.?\d*)\s*g/i,
+      /carb[s]?[^\d]*(\d+\.?\d*)/i
+    ];
+    
+    for (const pattern of carbPatterns) {
+      const match = text.match(pattern);
+      if (match && !carbs) {
+        carbs = parseFloat(match[1]);
+        console.log(`  ✓ Pattern matched Carbs: ${carbs}g`);
+        break;
+      }
+    }
+    
+    // Format 4: "Fat 25g" or "Total Fat: 25 g"
+    const fatPatterns = [
+      /(?:total\s)?fat[:\s]+(\d+\.?\d*)\s*g/i,
+      /fat[^\d]*(\d+\.?\d*)/i
+    ];
+    
+    for (const pattern of fatPatterns) {
+      const match = text.match(pattern);
+      if (match && !fat) {
+        fat = parseFloat(match[1]);
+        console.log(`  ✓ Pattern matched Fat: ${fat}g`);
+        break;
+      }
+    }
+    
+    // Sugar
+    if (!sugar) {
+      const sugarMatch = text.match(/sugar[s]?[:\s]+(\d+\.?\d*)/i);
+      if (sugarMatch) {
+        sugar = parseFloat(sugarMatch[1]);
+        console.log(`  ✓ Pattern matched Sugar: ${sugar}g`);
+      }
+    }
+    
+    // Fiber
+    if (!fiber) {
+      const fiberMatch = text.match(/(?:dietary\s)?fib(?:re|er)[:\s]+(\d+\.?\d*)/i);
+      if (fiberMatch) {
+        fiber = parseFloat(fiberMatch[1]);
+        console.log(`  ✓ Pattern matched Fiber: ${fiber}g`);
+      }
+    }
+    
+    // Sodium
+    if (!sodium) {
+      const sodiumMatch = text.match(/sodium[:\s]+(\d+\.?\d*)\s*(mg|g)?/i);
+      if (sodiumMatch) {
+        const value = parseFloat(sodiumMatch[1]);
+        const unit = sodiumMatch[2]?.toLowerCase();
+        sodium = unit === 'g' ? value * 1000 : value;
+        console.log(`  ✓ Pattern matched Sodium: ${sodium}mg`);
+      }
     }
   }
   
@@ -168,11 +307,14 @@ export function ScanModal() {
       console.log('📦 Product:', productName);
       console.log('📊 Extracted Nutrition:', extractedNutrition);
 
-      // Step 3: Only use USDA if ALL OCR values are 0
+      // Step 3: Check if we got ANY nutrition data from OCR
       const hasOcrData = extractedNutrition.calories > 0 || 
                          extractedNutrition.protein > 0 || 
                          extractedNutrition.carbs > 0 || 
-                         extractedNutrition.fat > 0;
+                         extractedNutrition.fat > 0 ||
+                         extractedNutrition.fiber > 0 ||
+                         extractedNutrition.sugar > 0 ||
+                         extractedNutrition.sodium > 0;
 
       if (hasOcrData) {
         console.log('✅ Using OCR-extracted nutrition values');
@@ -203,27 +345,18 @@ export function ScanModal() {
           const alts = await fetchAlternatives(productName);
           setAlternatives(alts);
         }
-      } else if (productName) {
-        // Fallback to USDA only if OCR failed completely
-        console.log('⚠️ No OCR nutrition data found, trying USDA API...');
-        try {
-          const response = await fetch('/api/analyze-scanned-food', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ foodName: productName })
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            setNutrition(data.nutrition);
-            setAnalysis(data.analysis);
-            setAlternatives(data.alternatives || []);
-            setSource('usda');
-            setLastStatus(data.analysis?.status);
-          }
-        } catch (error) {
-          console.error('❌ USDA API failed:', error);
+      } else {
+        // No OCR data found - try ingredient-based classification
+        console.log('❌ No nutrition data extracted from OCR, trying ingredient analysis...');
+        
+        const ingredientAnalysis = classifyByIngredients(text || '');
+        setAnalysis(ingredientAnalysis);
+        setLastStatus(ingredientAnalysis.status);
+        
+        // Get alternatives if unhealthy
+        if (ingredientAnalysis.status === 'Unhealthy') {
+          const alts = await fetchAlternatives(productName);
+          setAlternatives(alts);
         }
       }
 
@@ -279,6 +412,95 @@ export function ScanModal() {
     };
   }
 
+  // Classify based on ingredients when nutrition data is missing
+  function classifyByIngredients(text: string) {
+    const lowerText = text.toLowerCase();
+    
+    // Unhealthy ingredients/keywords
+    const unhealthyKeywords = [
+      'palm oil', 'refined', 'maida', 'sugar', 'dextrose', 'glucose', 
+      'hydrogenated', 'trans fat', 'preservative', 'artificial', 'flavor',
+      'chips', 'kurkure', 'lays', 'cheetos', 'bingo', 'doritos',
+      'namkeen', 'bhujia', 'sev', 'mixture', 'fryums',
+      'cookies', 'biscuit', 'cake', 'pastry', 'candy', 'chocolate bar',
+      'cola', 'soda', 'energy drink', 'instant noodles', 'maggi'
+    ];
+    
+    // Healthy ingredients/keywords
+    const healthyKeywords = [
+      'whole grain', 'whole wheat', 'oats', 'oatmeal', 'quinoa',
+      'millet', 'bajra', 'jowar', 'ragi', 'brown rice',
+      'fruit', 'apple', 'banana', 'orange', 'berry',
+      'vegetable', 'broccoli', 'spinach', 'carrot', 'tomato',
+      'nuts', 'almond', 'walnut', 'cashew', 'peanut',
+      'lentil', 'dal', 'chickpea', 'beans', 'sprouts',
+      'natural', 'organic', 'no preservative', 'no artificial'
+    ];
+    
+    let unhealthyCount = 0;
+    let healthyCount = 0;
+    const foundUnhealthy: string[] = [];
+    const foundHealthy: string[] = [];
+    
+    // Check for unhealthy ingredients
+    for (const keyword of unhealthyKeywords) {
+      if (lowerText.includes(keyword)) {
+        unhealthyCount++;
+        foundUnhealthy.push(keyword);
+      }
+    }
+    
+    // Check for healthy ingredients
+    for (const keyword of healthyKeywords) {
+      if (lowerText.includes(keyword)) {
+        healthyCount++;
+        foundHealthy.push(keyword);
+      }
+    }
+    
+    console.log(`🧪 Ingredient Analysis: Unhealthy=${unhealthyCount} (${foundUnhealthy.join(', ')}), Healthy=${healthyCount} (${foundHealthy.join(', ')})`);
+    
+    // Classification logic
+    let status: 'Healthy' | 'Moderate' | 'Unhealthy';
+    let explanation: string;
+    let recommendation: string;
+    const issues: string[] = [];
+    const positives: string[] = [];
+    
+    if (unhealthyCount > 0 && healthyCount === 0) {
+      status = 'Unhealthy';
+      explanation = `Contains unhealthy ingredients: ${foundUnhealthy.slice(0, 3).join(', ')}`;
+      recommendation = 'This product contains processed/unhealthy ingredients. Consider healthier alternatives.';
+      issues.push(...foundUnhealthy.slice(0, 3).map(k => `Contains ${k}`));
+    } else if (healthyCount > 0 && unhealthyCount === 0) {
+      status = 'Healthy';
+      explanation = `Contains healthy ingredients: ${foundHealthy.slice(0, 3).join(', ')}`;
+      recommendation = 'Good choice! This product contains wholesome ingredients.';
+      positives.push(...foundHealthy.slice(0, 3).map(k => `Contains ${k}`));
+    } else if (unhealthyCount > 0 && healthyCount > 0) {
+      status = 'Moderate';
+      explanation = `Mixed ingredients - contains both healthy and unhealthy components`;
+      recommendation = 'Consume in moderation. Balance with healthier foods.';
+      issues.push(...foundUnhealthy.slice(0, 2).map(k => `Contains ${k}`));
+      positives.push(...foundHealthy.slice(0, 2).map(k => `Contains ${k}`));
+    } else {
+      // No specific ingredients detected
+      status = 'Unhealthy';
+      explanation = 'Could not extract complete nutrition or ingredient information';
+      recommendation = 'Please take a clearer photo of the nutrition facts label for accurate analysis.';
+      issues.push('Insufficient data for analysis');
+    }
+    
+    return {
+      status,
+      explanation,
+      recommendation,
+      issues,
+      positives,
+      basedOnIngredients: true
+    };
+  }
+
   // Fetch healthy alternatives
   async function fetchAlternatives(productName: string) {
     try {
@@ -327,10 +549,15 @@ export function ScanModal() {
     <div className="fixed inset-0 flex items-center justify-center bg-black/30 backdrop-blur-sm" style={{ zIndex: 99999 }}>
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-auto" style={{ width: '70%', maxWidth: '900px', height: '80%', maxHeight: '700px', zIndex: 100000 }}>
         <div className="p-4 flex items-center justify-between border-b dark:border-gray-700 bg-gradient-to-r from-nutricare-green/10 to-transparent">
-          <h3 className="text-xl font-bold flex items-center gap-2">
-            <span className="text-2xl">🔍</span>
-            Scan Food Label
-          </h3>
+          <div>
+            <h3 className="text-xl font-bold flex items-center gap-2">
+              <span className="text-2xl">🔍</span>
+              Scan Food Label
+            </h3>
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+              📸 Tip: Focus on the <strong>Nutrition Facts</strong> table for best results
+            </p>
+          </div>
           <button onClick={close} className="text-gray-600 hover:text-gray-900 dark:text-gray-300 px-3 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
             ✕ Close
           </button>
@@ -368,11 +595,16 @@ export function ScanModal() {
             {/* Extracted Text */}
             <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
               <h4 className="font-semibold mb-2 flex items-center gap-2">
-                <span>📄</span> Extracted Text
+                <span>📄</span> Extracted Text {ocrText && `(${ocrText.split('\n').length} lines)`}
               </h4>
-              <pre className="whitespace-pre-wrap text-xs text-gray-700 dark:text-gray-300 max-h-32 overflow-auto bg-white dark:bg-gray-800 p-2 rounded">
-                {ocrText || 'No text extracted yet...'}
+              <pre className="whitespace-pre-wrap text-xs text-gray-700 dark:text-gray-300 max-h-40 overflow-auto bg-white dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-700">
+                {ocrText || 'No text extracted yet... Upload an image to scan.'}
               </pre>
+              {ocrText && (
+                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  💡 Tip: Look for words like "Energy", "Protein", "Carbohydrate", "Fat" in the extracted text above
+                </div>
+              )}
             </div>
 
             {/* Nutrition Facts */}
@@ -463,14 +695,19 @@ export function ScanModal() {
               }`}>
                 <h4 className="font-semibold mb-2 flex items-center gap-2">
                   <span>{analysis.status === 'Healthy' ? '✅' : analysis.status === 'Unhealthy' ? '⚠️' : '⚖️'}</span>
-                  Health Result: <span className={`${
+                  {nutrition ? 'Health Result:' : 'Ingredient Analysis:'} <span className={`${
                     analysis.status === 'Healthy' ? 'text-green-700 dark:text-green-400' 
                     : analysis.status === 'Unhealthy' ? 'text-red-700 dark:text-red-400'
                     : 'text-yellow-700 dark:text-yellow-400'
                   }`}>{analysis.status}</span>
+                  {(analysis as any).basedOnIngredients && (
+                    <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">
+                      Based on Ingredients
+                    </span>
+                  )}
                 </h4>
-                <p className="text-sm mb-2">{analysis.explanation}</p>
-                <p className="text-xs italic text-gray-600 dark:text-gray-400">{analysis.recommendation}</p>
+                <p className="text-sm mb-2 whitespace-pre-line">{analysis.explanation}</p>
+                <p className="text-xs italic text-gray-600 dark:text-gray-400 whitespace-pre-line">{analysis.recommendation}</p>
                 
                 {analysis.issues && analysis.issues.length > 0 && (
                   <div className="mt-3 p-2 bg-white/50 dark:bg-gray-800/50 rounded">

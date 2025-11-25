@@ -308,8 +308,9 @@ class NutritionService {
   /**
    * Get nutrition information from USDA FoodData Central API
    * Extracts calories from "Energy" nutrient with "kcal" unit
+   * Made public to support scan food label feature
    */
-  private async getNutritionFromUSDA(foodName: string, quantity: number, unit: string): Promise<NutritionData> {
+  async getNutritionFromUSDA(foodName: string, quantity: number, unit: string): Promise<NutritionData> {
     try {
       this.initializeUsdaCredentials();
       

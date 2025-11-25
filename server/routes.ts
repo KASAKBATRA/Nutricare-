@@ -53,13 +53,36 @@ function requireAuth(req: any, res: any, next: any) {
   next();
 }
 
+// Clean product name from OCR text
+function cleanProductName(rawText: string): string {
+  if (!rawText) return '';
+  
+  // Remove common OCR artifacts and clean text
+  let cleaned = rawText
+    .replace(/\s+/g, ' ')                           // Multiple spaces to single
+    .replace(/[^\w\s&'-]/g, '')                     // Keep only alphanumeric, spaces, &, ', -
+    .replace(/\b(registered|trade|mark|of|inc|ltd|llc|pvt|co|corporation)\b/gi, '') // Remove legal terms
+    .replace(/\b(sa|tm|®|©)\b/gi, '')               // Remove symbols in text form
+    .trim();
+
+  // Extract brand name or first meaningful word(s)
+  const words = cleaned.split(/\s+/).filter(w => w.length > 2);
+  
+  if (words.length === 0) return '';
+  
+  // Take first 1-3 words as product name
+  const productName = words.slice(0, Math.min(3, words.length)).join(' ');
+  
+  return productName;
+}
+
 // Health analysis helper
 function analyzeHealthStatus(nutrition: any) {
   const { calories, protein, carbs, fat, fiber, sugar, sodium } = nutrition;
   
   const issues: string[] = [];
   const positives: string[] = [];
-  let score = 50; // Start with neutral score
+  let score = 50;
   
   console.log(`🔬 Analyzing nutrition: Cal=${calories}, Pro=${protein}g, Fat=${fat}g, Carbs=${carbs}g, Fiber=${fiber}g, Sugar=${sugar}g, Sodium=${sodium}mg`);
   
@@ -103,7 +126,7 @@ function analyzeHealthStatus(nutrition: any) {
     score += 10;
   }
   
-  // Determine status based on EXACT user requirements
+  // Determine status based on requirements
   let status: 'Healthy' | 'Moderate' | 'Unhealthy';
   let explanation: string;
   let recommendation: string;
@@ -1106,6 +1129,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+
+
   // Analyze scanned food endpoint
   app.post('/api/analyze-scanned-food', requireAuth, async (req: any, res) => {
     try {
@@ -1117,21 +1142,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`🔍 Analyzing scanned food: "${foodName}"`);
 
-      // Get nutrition from USDA API (100g serving)
+      // Clean and extract brand/product name from OCR text
+      const cleanedName = cleanProductName(foodName);
+      console.log(`🧹 Cleaned product name: "${cleanedName}"`);
+
+      if (!cleanedName) {
+        return res.status(400).json({ 
+          message: "Could not extract valid product name from text. Please try uploading a clearer image." 
+        });
+      }
+
+      // Get nutrition from USDA API (100g serving) with timeout
       let nutrition: any = null;
       let source = 'usda';
 
       try {
-        nutrition = await nutritionService.getNutritionFromUSDA(foodName, 100, 'grams');
-        console.log(`✅ Got nutrition from USDA for "${foodName}":`, nutrition);
-      } catch (usdaError: any) {
-        console.log(`❌ USDA failed for "${foodName}":`, usdaError.message);
-        return res.status(404).json({ 
-          message: `Could not find nutritional data for "${foodName}". Try searching with a more generic name.` 
+        // Add timeout wrapper
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Request timeout')), 10000); // 10 second timeout
         });
+
+        nutrition = await Promise.race([
+          nutritionService.getNutritionFromUSDA(cleanedName, 100, 'grams'),
+          timeoutPromise
+        ]);
+        
+        // Validate USDA returned actual data (not all zeros)
+        const hasValidData = nutrition && (
+          nutrition.calories > 0 || 
+          nutrition.protein > 0 || 
+          nutrition.carbs > 0 || 
+          nutrition.fat > 0
+        );
+
+        if (!hasValidData) {
+          console.log(`⚠️ USDA returned no valid data for "${cleanedName}"`);
+          throw new Error('No nutrition data found in USDA database');
+        }
+        
+        console.log(`✅ Got nutrition from USDA for "${cleanedName}":`, nutrition);
+      } catch (usdaError: any) {
+        console.log(`❌ USDA failed for "${cleanedName}":`, usdaError.message);
+        
+        // Try database fallback
+        try {
+          console.log('🔄 Trying database fallback...');
+          const dbResults = await db
+            .select()
+            .from(foodItems)
+            .where(sql`${foodItems.name} ILIKE ${`%${cleanedName}%`}`)
+            .limit(1);
+
+          if (dbResults.length > 0) {
+            const food = dbResults[0];
+            nutrition = {
+              calories: parseFloat(food.caloriesPer100g || '0'),
+              protein: parseFloat(food.proteinPer100g || '0'),
+              carbs: parseFloat(food.carbsPer100g || '0'),
+              fat: parseFloat(food.fatsPer100g || '0'),
+              fiber: parseFloat(food.fiberPer100g || '0'),
+              sugar: parseFloat(food.sugarPer100g || '0'),
+              sodium: parseFloat(food.sodiumPer100g || '0'),
+            };
+            source = 'database';
+            console.log(`✅ Found in database: "${food.name}"`);
+          }
+        } catch (dbError) {
+          console.error('❌ Database fallback failed:', dbError);
+        }
+
+        if (!nutrition) {
+          return res.status(404).json({ 
+            message: `Could not find nutritional data for "${cleanedName}". The product may not be in our database.\n\nSuggestions:\n• Use the OCR-extracted nutrition values if visible in the label\n• Take a clearer photo showing the nutrition facts table\n• Search for a similar product manually\n• Try a generic product name (e.g., "corn chips" instead of brand name)` 
+          });
+        }
       }
 
-      // Analyze health status based on user's exact requirements
+      // Analyze health status
       const analysis = analyzeHealthStatus(nutrition);
       
       // Get alternatives from database if unhealthy
@@ -1143,6 +1230,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         nutrition,
         source,
+        productName: cleanedName,
+        originalText: foodName,
         analysis,
         alternatives,
       });
