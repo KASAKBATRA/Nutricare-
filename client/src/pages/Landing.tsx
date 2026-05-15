@@ -26,12 +26,12 @@ export default function Landing() {
             
             <h1 className="text-3xl md:text-4xl font-bold mb-3">
               <span className="bg-gradient-to-r from-nutricare-green to-nutricare-forest bg-clip-text text-transparent">
-                NutriCare++
+                Smart Well
               </span>
             </h1>
             
             <p className="text-lg md:text-xl text-gray-600 dark:text-gray-300 mb-4 leading-relaxed">
-              Your AI-powered nutrition companion for a healthier lifestyle
+              A NUTRITION AND WELLNESS MANAGEMENT SYSTEM
             </p>
             
             <p className="text-base text-gray-500 dark:text-gray-400 mb-6 max-w-2xl mx-auto">
@@ -107,7 +107,7 @@ export default function Landing() {
           <div className="bg-gradient-to-r from-nutricare-green to-nutricare-light p-6 rounded-xl text-white">
             <h2 className="text-xl font-bold mb-2">Ready to start your health journey?</h2>
             <p className="text-base mb-4 opacity-90">
-              Join thousands of users living healthier lives with NutriCare++
+              Join thousands of users living healthier lives with Smart Well
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
               <button
@@ -128,7 +128,7 @@ export default function Landing() {
 
           {/* Footer */}
           <div className="mt-6 text-center text-gray-500 dark:text-gray-400">
-            <p className="text-sm">&copy; 2024 NutriCare++. Empowering healthy lifestyles worldwide.</p>
+            <p className="text-sm">&copy; 2024 Smart Well. Empowering healthy lifestyles worldwide.</p>
           </div>
         </div>
       </div>

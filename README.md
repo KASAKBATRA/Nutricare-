@@ -1,4 +1,4 @@
-# NutriCare++
+# Smart Well
 
 Healthy eating, happier you. 🌿
 
@@ -194,7 +194,7 @@ flowchart TD
 ```
 
 If you'd like, I can commit these diagrams as a separate `docs/diagrams.md` file, or add a small PNG export of each diagram for the README.
-# NutriCare++ (Nutricare)
+# Smart Well
 
 A nutrition tracking web application with user accounts and lightweight AI chat features.
 
@@ -220,7 +220,7 @@ This README documents how the project is organized, how to run it locally, key i
 
 ## Project overview
 
-NutriCare++ is a personal nutrition and health-tracking app with features such as:
+Smart Well is a personal nutrition and health-tracking app with features such as:
 
 - User registration (with email OTP verification)
 - Login & sessions (express-session, Postgres sessions)

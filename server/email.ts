@@ -14,7 +14,7 @@ export async function sendMail({ to, subject, text, html, attachments }: {
 }) {
   try {
     await transporter.sendMail({
-      from: `"NutriCare++" <${EMAIL_USER || 'noreply@nutricare.com'}>`,
+      from: `"Smart Well" <${EMAIL_USER || 'noreply@nutricare.com'}>`,
       to,
       subject,
       text,
@@ -59,8 +59,8 @@ try {
 
 export async function sendOTPEmail(email: string, otp: string, type: 'registration' | 'password_reset') {
   const subject = type === 'registration' 
-    ? 'NutriCare++ - Verify Your Account' 
-    : 'NutriCare++ - Reset Your Password';
+    ? 'Smart Well - Verify Your Account' 
+    : 'Smart Well - Reset Your Password';
     
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -68,7 +68,7 @@ export async function sendOTPEmail(email: string, otp: string, type: 'registrati
         <div style="background: linear-gradient(135deg, #10B981, #34D399); width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center;">
           <span style="color: white; font-size: 32px;">🌱</span>
         </div>
-        <h1 style="color: #10B981; margin: 0;">NutriCare++</h1>
+        <h1 style="color: #10B981; margin: 0;">Smart Well</h1>
       </div>
       
       <div style="background: #f8fffe; border: 1px solid #d1fae5; border-radius: 12px; padding: 30px; text-align: center;">
@@ -78,7 +78,7 @@ export async function sendOTPEmail(email: string, otp: string, type: 'registrati
         
         <p style="color: #374151; margin-bottom: 30px; line-height: 1.6;">
           ${type === 'registration' 
-            ? 'Welcome to NutriCare++! Please use the verification code below to complete your registration:'
+            ? 'Welcome to Smart Well! Please use the verification code below to complete your registration:'
             : 'You requested to reset your password. Use the code below to set a new password:'
           }
         </p>
@@ -93,14 +93,14 @@ export async function sendOTPEmail(email: string, otp: string, type: 'registrati
       </div>
       
       <div style="text-align: center; margin-top: 30px; color: #9ca3af; font-size: 12px;">
-        <p>© 2024 NutriCare++. Empowering healthy lifestyles worldwide.</p>
+        <p>© 2024 Smart Well. Empowering healthy lifestyles worldwide.</p>
       </div>
     </div>
   `;
 
   try {
     await transporter.sendMail({
-      from: `"NutriCare++" <${EMAIL_USER || 'noreply@nutricare.com'}>`,
+      from: `"Smart Well" <${EMAIL_USER || 'noreply@nutricare.com'}>`,
       to: email,
       subject,
       html,

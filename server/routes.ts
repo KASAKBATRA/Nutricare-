@@ -306,7 +306,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // send a simple test email
         await sendMail({
           to: email,
-          subject: 'NutriCare++ Test Email',
+          subject: 'Smart Well Test Email',
           text: `This is a test email sent at ${new Date().toISOString()}`,
           html: `<p>This is a <strong>test</strong> email sent at ${new Date().toISOString()}</p>`,
         });
@@ -1448,7 +1448,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             await sendMail({
               to: user.email,
               subject: `Your appointment has been ${newStatus}`,
-              text: `Hello ${user.firstName || ''},\n\nYour appointment scheduled on ${new Date(appointment.scheduledAt).toLocaleString()} has been ${newStatus} by the nutritionist.\n\nRegards,\nNutriCare++`,
+              text: `Hello ${user.firstName || ''},\n\nYour appointment scheduled on ${new Date(appointment.scheduledAt).toLocaleString()} has been ${newStatus} by the nutritionist.\n\nRegards,\nSmart Well`,
             });
           }
         } catch (e) {
@@ -1577,7 +1577,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   <p style="color:#374151; line-height:1.6;">Your nutritionist has proposed to move your appointment to <strong>${newDate.toLocaleString()}</strong>. Please open your Appointments page to accept or reject this proposal.</p>
                   <p style="color:#374151; line-height:1.6;">If you accept, we will notify the nutritionist and confirm the appointment.</p>
                 </div>
-                <div style="text-align:center; margin-top:18px; color:#9ca3af; font-size:12px;">© ${new Date().getFullYear()} NutriCare++. Healthy eating, happier you.</div>
+                <div style="text-align:center; margin-top:18px; color:#9ca3af; font-size:12px;">© ${new Date().getFullYear()} Smart Well. Healthy eating, happier you.</div>
               </div>
             `;
             sendMail({ to: user.email, subject, html }).catch((e) => {

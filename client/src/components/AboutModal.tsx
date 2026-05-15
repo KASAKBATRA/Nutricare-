@@ -41,7 +41,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
     intro: {
       icon: <Heart className="w-4 h-4" />,
       title: "About Me",
-      content: "I'm Kasak, a passionate B.Tech AI & Data Science student in my final year, dedicated to revolutionizing healthcare through innovative technology. My journey in artificial intelligence and data science has equipped me with deep knowledge in machine learning, natural language processing, and health informatics. I believe technology should be accessible, inclusive, and genuinely helpful in improving people's lives. My vision is to bridge the gap between complex AI solutions and real-world health challenges, making nutrition guidance as simple as having a conversation with a trusted friend.",
+      content: "I'm Madhav Maheshwari, a passionate B.Tech AI & Data Science student in my final year, dedicated to revolutionizing healthcare through innovative technology. My journey in artificial intelligence and data science has equipped me with deep knowledge in machine learning, natural language processing, and health informatics. I believe technology should be accessible, inclusive, and genuinely helpful in improving people's lives. My vision is to bridge the gap between complex AI solutions and real-world health challenges, making nutrition guidance as simple as having a conversation with a trusted friend.",
       highlights: ["🎓 Final Year AI & DS Student", "💡 Healthcare Innovation Enthusiast", "🌍 Accessibility Advocate", "🤖 AI/ML Specialist"]
     },
     problem: {
@@ -53,19 +53,19 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
     solution: {
       icon: <Sparkles className="w-4 h-4" />,
       title: "Solution", 
-      content: "NutriCaree+ is a comprehensive  health ecosystem that addresses every aspect of nutrition and wellness. Our platform features intelligent food analysis that understands regional cuisines and cooking methods, providing personalized alternatives based on individual health conditions. Users can seamlessly book consultations with certified nutritionists through our integrated appointment system. The app generates professional-grade health reports suitable for medical consultations. Our social community functions like Instagram for health, where users share progress, recipes, and motivation. The multilingual AI chatbot provides 24/7 guidance in local languages, while our innovative stress management module recognizes that mental health and nutrition are interconnected.",
+      content: "Smart Well is a comprehensive health ecosystem that addresses every aspect of nutrition and wellness. Our platform features intelligent food analysis that understands regional cuisines and cooking methods, providing personalized alternatives based on individual health conditions. Users can seamlessly book consultations with certified nutritionists through our integrated appointment system. The app generates professional-grade health reports suitable for medical consultations. Our social community functions like Instagram for health, where users share progress, recipes, and motivation. The multilingual AI chatbot provides 24/7 guidance in local languages, while our innovative stress management module recognizes that mental health and nutrition are interconnected.",
       highlights: ["👥 Expert Nutritionist Network", "📱 Social Health Community", "📊 Professional Health Reports", "🧘 Integrated Stress Management"]
     },
     usp: {
       icon: <Award className="w-4 h-4" />,
       title: "Unique Value",
-      content: "NutriCaree+ stands apart as the world's first holistic health platform that seamlessly integrates artificial intelligence, professional healthcare expertise, and social community engagement. Unlike competitors who focus on isolated features, we've created a unified ecosystem where AI insights, expert consultations, and peer support work together. Our platform adapts to regional diets and cultural preferences, ensuring relevance for diverse global communities. The integration of stress management with nutrition guidance acknowledges the complete picture of health. Our professional-grade reports bridge the gap between consumer health tracking and medical documentation, making the app valuable for both personal use and healthcare provider consultations.",
+      content: "Smart Well stands apart as the world's first holistic health platform that seamlessly integrates artificial intelligence, professional healthcare expertise, and social community engagement. Unlike competitors who focus on isolated features, we've created a unified ecosystem where AI insights, expert consultations, and peer support work together. Our platform adapts to regional diets and cultural preferences, ensuring relevance for diverse global communities. The integration of stress management with nutrition guidance acknowledges the complete picture of health. Our professional-grade reports bridge the gap between consumer health tracking and medical documentation, making the app valuable for both personal use and healthcare provider consultations.",
       highlights: ["🌟 World's First Holistic Health Ecosystem", "🧠 AI + Expert + Community Integration", "🌍 Cultural Diet Adaptation", "🏥 Medical-Grade Documentation", "💖 Mind-Body Health Connection"]
     },
     tech: {
       icon: <Code className="w-4 h-4" />,
       title: "Tech Stack",
-      content: "NutriCaree is built using modern web technologies for optimal performance and user experience. The frontend uses React with TypeScript for type safety and TailwindCSS for responsive design. Backend is powered by Node.js with Express server and PostgreSQL database with Drizzle ORM for efficient data management. Vite provides fast development builds, while Wouter handles client-side routing. React Query manages server state and caching. The entire application is deployed on Vercel for reliable hosting and Shadcn/ui provides beautiful, accessible components.",
+      content: "Smart Well is built using modern web technologies for optimal performance and user experience. The frontend uses React with TypeScript for type safety and TailwindCSS for responsive design. Backend is powered by Node.js with Express server and PostgreSQL database with Drizzle ORM for efficient data management. Vite provides fast development builds, while Wouter handles client-side routing. React Query manages server state and caching. The entire application is deployed on Vercel for reliable hosting and Shadcn/ui provides beautiful, accessible components.",
       highlights: ["⚛️ React + TypeScript Frontend", "� Node.js + Express Backend", "🐘 PostgreSQL + Drizzle ORM", "⚡ Vite Build Tool", "🎯 Shadcn/ui Components", "▲ Vercel Deployment"]
     }
   } as const;
@@ -131,7 +131,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
                     <div className="flex-1 text-left">
                       <div className="space-y-2">
                         <h2 className="text-3xl font-bold flex items-center gap-2">
-                          Kasak
+                          Madhav Maheshwari
                           <Sparkles className="w-6 h-6 text-yellow-300 animate-pulse" />
                         </h2>
                         <p className="text-green-100 text-lg font-medium">Frontend Developer & AI Enthusiast</p>
@@ -142,7 +142,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
                           </Badge>
                           <Badge variant="secondary" className="bg-white/20 text-white border-white/30 hover:bg-white/30 transition-colors px-3 py-1">
                             <Award className="w-4 h-4 mr-2" />
-                            Final Year Project
+                            Major Project
                           </Badge>
                         </div>
                         <p className="text-green-50 text-sm leading-relaxed max-w-lg">
@@ -168,7 +168,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
               </p>
               <div className="flex items-center justify-center gap-4 text-sm">
                 <Badge variant="outline" className="text-sm px-3 py-1">
-                  📝 Roll No: 02715611922
+                  📝 Roll No: 03215611922
                 </Badge>
                 <div className="h-4 w-px bg-gray-300 dark:bg-gray-600"></div>
                 <div className="text-gray-500 dark:text-gray-400 text-sm">
@@ -310,7 +310,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
               <div className="flex items-center justify-center gap-3 mb-3">
                 <Lightbulb className="w-5 h-5 text-yellow-500" />
                 <p className="text-sm font-bold text-gray-700 dark:text-gray-300">
-                  Final Year Project - NutriCaree+
+                  Major Project - Smart Well
                 </p>
                 <Heart className="w-5 h-5 text-red-500" />
               </div>

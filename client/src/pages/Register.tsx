@@ -100,7 +100,7 @@ export default function Register() {
             <i className="fas fa-leaf text-white text-3xl"></i>
           </div>
           <h1 className="text-3xl font-bold bg-gradient-to-r from-nutricare-green to-nutricare-forest bg-clip-text text-transparent">
-            NutriCare++
+            Smart Well
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-2">Create your health journey account</p>
         </div>

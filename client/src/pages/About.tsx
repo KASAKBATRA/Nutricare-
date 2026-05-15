@@ -16,17 +16,17 @@ const About = () => {
     solution: {
       icon: <Star className="w-5 h-5" />,
       title: "Solution",
-      content: "NutriCare++ is a full‑stack nutrition companion that combines automated nutrition estimation, personalized baselines, expert consultations, and community motivation. It uses Nutritionix for food data, a learned per-user baseline to improve accuracy, Utensil calibration to map bowls/spoons to grams, an AI-powered multilingual chatbot (OpenAI) for guidance, and an appointments/reports system to connect users with nutritionists. The result is a practical, privacy-conscious tool for real-world eating habits."
+      content: "Smart Well is a full‑stack nutrition companion that combines automated nutrition estimation, personalized baselines, expert consultations, and community motivation. It uses Nutritionix for food data, a learned per-user baseline to improve accuracy, Utensil calibration to map bowls/spoons to grams, an AI-powered multilingual chatbot (OpenAI) for guidance, and an appointments/reports system to connect users with nutritionists. The result is a practical, privacy-conscious tool for real-world eating habits."
     },
     usp: {
       icon: <Users className="w-5 h-5" />,
       title: "Unique Value (USP)",
-      content: "Unlike single-purpose calorie trackers, NutriCare++ fuses: personalized calorie baselines (learned from user data), utensil calibration for realistic portioning, integrated nutritionist appointments & professional reports, multilingual AI assistance, and a social feed for accountability. This makes it useful for both individual self-monitoring and clinical/consultation contexts."
+      content: "Unlike single-purpose calorie trackers, Smart Well fuses: personalized calorie baselines (learned from user data), utensil calibration for realistic portioning, integrated nutritionist appointments & professional reports, multilingual AI assistance, and a social feed for accountability. This makes it useful for both individual self-monitoring and clinical/consultation contexts."
     },
     research: {
       icon: <Search className="w-5 h-5" />,
       title: "Research & Motivation",
-      content: "Literature showed most consumer apps emphasize calorie logging without adapting to regional recipes or home-cooking variance. NutriCare++ targets that gap by combining nutrition APIs with per-user learning and nutritionist workflows so recommendations are practical and locally relevant."
+      content: "Literature showed most consumer apps emphasize calorie logging without adapting to regional recipes or home-cooking variance. Smart Well targets that gap by combining nutrition APIs with per-user learning and nutritionist workflows so recommendations are practical and locally relevant."
     },
     tech: {
       icon: <Code className="w-5 h-5" />,
@@ -59,7 +59,7 @@ const About = () => {
         <div className="container mx-auto px-4">
           <div className="text-center">
             <h1 className="text-4xl md:text-5xl font-bold mb-4 tracking-tight">
-              Meet the Developer – Kasak
+              Meet the Developer – Madhav Maheshwari
             </h1>
             <p className="text-xl opacity-90 max-w-2xl mx-auto">
               Creating innovative health solutions through AI and community-driven design
@@ -80,7 +80,7 @@ const About = () => {
                     <User className="w-24 h-24 text-white/80" />
                   </div>
                   <div className="text-white">
-                    <h2 className="text-3xl font-bold mb-2">Kasak</h2>
+                    <h2 className="text-3xl font-bold mb-2">Madhav Maheshwari</h2>
                     <Badge variant="secondary" className="bg-white/20 text-white border-white/30">
                       Lead Developer
                     </Badge>
@@ -107,7 +107,7 @@ const About = () => {
                         <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
                         <div>
                           <p className="font-medium text-gray-900 dark:text-white">Roll Number</p>
-                          <p className="text-gray-600 dark:text-gray-300">02715611922</p>
+                          <p className="text-gray-600 dark:text-gray-300">03215611922</p>
                         </div>
                       </div>
                       <div className="flex items-start gap-3">
@@ -144,7 +144,7 @@ const About = () => {
         {/* Project Information Tabs */}
         <Card className="shadow-xl border-0">
           <CardHeader className="bg-gradient-to-r from-green-500 to-green-400 text-white">
-            <CardTitle className="text-2xl text-center">NutriCare++ Project Information</CardTitle>
+            <CardTitle className="text-2xl text-center">Smart Well Project Information</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">

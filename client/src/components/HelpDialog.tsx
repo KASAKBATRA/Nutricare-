@@ -132,10 +132,10 @@ export function HelpDialog({ children }: HelpDialogProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-2xl">
             <i className="fas fa-question-circle text-nutricare-green"></i>
-            NutriCare Help & Features
+            Smart Well Help & Features
           </DialogTitle>
           <DialogDescription>
-            Complete guide to all features and capabilities of NutriCare++
+            Complete guide to all features and capabilities of Smart Well
           </DialogDescription>
         </DialogHeader>
 
@@ -145,12 +145,12 @@ export function HelpDialog({ children }: HelpDialogProps) {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <i className="fas fa-leaf text-nutricare-green"></i>
-                About NutriCare++
+                About Smart Well
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-gray-600 dark:text-gray-300 leading-relaxed">
-                NutriCare is a comprehensive smart health and nutrition companion designed to help you achieve your wellness goals. 
+                Smart Well is a comprehensive smart health and nutrition companion designed to help you achieve your wellness goals. 
                 Our platform combines AI-powered insights, community support, and professional guidance to make healthy living easier and more enjoyable.
               </p>
             </CardContent>

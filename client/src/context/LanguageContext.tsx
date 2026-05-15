@@ -64,7 +64,7 @@ const translations = {
     'friends.shared_recipe': 'shared a healthy recipe',
     
     // Chatbot
-    'chatbot.title': 'NutriCare AI',
+    'chatbot.title': 'Smart Well AI',
     'chatbot.placeholder': 'Ask me anything...',
     'chatbot.initial': "Hello! I'm here to help you with your nutrition and health goals. What would you like to know?",
     
@@ -143,7 +143,7 @@ const translations = {
     'friends.shared_recipe': 'ने एक स्वस्थ रेसिपी साझा की',
     
     // Chatbot
-    'chatbot.title': 'NutriCare AI',
+    'chatbot.title': 'Smart Well AI',
     'chatbot.placeholder': 'मुझसे कुछ भी पूछें...',
     'chatbot.initial': 'नमस्ते! मैं यहाँ आपके पोषण और स्वास्थ्य लक्ष्यों में मदद करने के लिए हूँ। आप क्या जानना चाहते हैं?',
     

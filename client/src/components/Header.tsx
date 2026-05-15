@@ -143,7 +143,7 @@ export function Header({ onChatbotOpen }: HeaderProps = {}) {
               <i className="fas fa-leaf text-white text-xl"></i>
             </div>
             <h1 className="text-2xl font-bold bg-gradient-to-r from-nutricare-green to-nutricare-forest bg-clip-text text-transparent">
-              NutriCare++
+              Smart Well
             </h1>
           </div>
 
