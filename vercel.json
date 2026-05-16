@@ -10,7 +10,7 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "https://nutricaree.onrender.com/api/$1"
+      "dest": "https://smartwell.onrender.com/api/$1"
     },
     {
       "src": "/(.*)",
