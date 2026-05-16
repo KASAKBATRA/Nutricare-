@@ -8,6 +8,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
+app.set("trust proxy", 1);
 // Configure CORS to allow credentialed requests from the client.
 // If you deploy client and server on different origins (e.g. Vercel/Netlify client + Render API)
 // the client must send credentials and the server must allow them.
