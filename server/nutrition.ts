@@ -81,7 +81,20 @@ export const addMealSchema = z.object({
   quantity: z.number().positive("Quantity must be positive"),
   unit: z.enum(["grams", "ml", "cups", "pieces", "oz", "tbsp", "tsp"]),
   mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
-  cookingIntensity: z.enum(["Less Oil", "Normal", "More Oil", "Extra Ghee"]).optional().default("Normal"),
+  cookingIntensity: z.enum([
+    "Boiled/Steamed",
+    "Lightly Fried",
+    "Normal",
+    "Deep Fried",
+    "Less Oil",
+    "More Oil",
+    "Extra Ghee" // Added more options to match client
+  ]).optional().default("Normal"),
+  oilType: z.string().optional().default("No Oil"),
+  milkType: z.string().optional().default("None"),
+  sugarType: z.string().optional().default("No Sugar"),
+  spiceLevel: z.string().optional().default("Normal"),
+  utensilType: z.string().optional().default("Medium Bowl (~150ml)"),
 });
 
 export type AddMealData = z.infer<typeof addMealSchema>;

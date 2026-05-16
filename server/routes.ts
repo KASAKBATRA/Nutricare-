@@ -1269,13 +1269,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/water-logs', requireAuth, async (req: any, res) => {
     try {
       const userId = getUserId(req);
-      const { date, ...rest } = req.body;
+      const { date, amount, ...rest } = req.body;
       const logData = { 
         ...rest, 
         userId,
+        amount: String(amount),
         date: new Date(date)
       };
-      const log = await storage.createWaterLog(logData);
+      const log = await storage.createWaterLog(logData as any);
       res.json(log);
     } catch (error) {
       console.error("Error creating water log:", error);
